@@ -1,0 +1,289 @@
+---
+title: "Module 7: Web Networking & Data Serialization"
+description: "HTTP requests, URL handling, JSON, form data, and cross‑compilation in Go."
+---
+
+## Overview
+
+Go communicates with the outside world through HTTP and data serialization:
+
+```
+Go Application
+    ↓
+HTTP Request
+    ↓
+Internet / API
+    ↓
+HTTP Response
+    ↓
+JSON
+    ↓
+Go Struct
+```
+
+The main topics covered in this module are:
+
+- `net/http` – HTTP client & server
+- `net/url` – URL parsing & query handling
+- GET & POST requests
+- Form data (`application/x‑www‑form‑urlencoded` & `multipart/form-data`)
+- JSON encoding / decoding (`encoding/json`)
+- Struct tags for JSON
+- Cross‑compilation (`GOOS`, `GOARCH`)
+
+---
+
+## net/http – HTTP Client
+
+```go
+import "net/http"
+```
+
+### Simple GET Request
+```go
+response, err := http.Get("https://example.com")
+if err != nil {
+    fmt.Println("Error:", err)
+    return
+}
+defer response.Body.Close()
+
+data, err := io.ReadAll(response.Body)
+if err != nil {
+    return
+}
+fmt.Println(string(data))
+```
+
+**Flow:** `http.Get()` → `http.Response` → `response.Body` → `io.ReadAll` → `[]byte`.
+
+### Inspecting `http.Response`
+```go
+fmt.Println(response.Status)       // e.g. "200 OK"
+fmt.Println(response.StatusCode)   // e.g. 200
+fmt.Println(response.Header)
+```
+
+Common status codes:
+| Code | Meaning |
+|------|---------|
+| 200  | OK |
+| 201  | Created |
+| 400  | Bad Request |
+| 401  | Unauthorized |
+| 403  | Forbidden |
+| 404  | Not Found |
+| 500  | Internal Server Error |
+
+---
+
+## Using `http.Client`
+
+A reusable `http.Client` gives you finer control:
+```go
+client := &http.Client{Timeout: 5 * time.Second}
+response, err := client.Get("https://example.com")
+// … handle response …
+```
+
+You can set timeouts, transports, proxies, etc.
+
+---
+
+## Manual Request Construction
+
+```go
+req, err := http.NewRequest("GET", "https://example.com", nil)
+if err != nil { return }
+req.Header.Set("Authorization", "Bearer token")
+resp, err := client.Do(req)
+```
+
+Creating a request manually lets you control method, URL, headers, and body.
+
+---
+
+## URL Parsing – `net/url`
+```go
+import "net/url"
+
+u, err := url.Parse("https://example.com/products?id=10")
+if err != nil { return }
+fmt.Println(u.Scheme)   // https
+fmt.Println(u.Host)     // example.com
+fmt.Println(u.Path)     // /products
+fmt.Println(u.RawQuery) // id=10
+```
+
+### Building Query Parameters
+```go
+params := url.Values{}
+params.Set("page", "2")
+params.Set("limit", "10")
+
+u, _ := url.Parse("https://example.com/products")
+u.RawQuery = params.Encode()
+fmt.Println(u.String()) // https://example.com/products?limit=10&page=2
+```
+
+---
+
+## POST Requests & JSON Payloads
+
+### Sending Raw JSON
+```go
+payload := `{"name":"Dilip","age":21}`
+body := strings.NewReader(payload)
+req, _ := http.NewRequest("POST", "https://example.com/users", body)
+req.Header.Set("Content-Type", "application/json")
+resp, _ := client.Do(req)
+```
+
+### Using a Struct
+```go
+type User struct {
+    Name string `json:"name"`
+    Age  int    `json:"age"`
+}
+
+user := User{Name: "Dilip", Age: 21}
+data, _ := json.Marshal(user)
+req, _ := http.NewRequest("POST", "https://example.com/users", bytes.NewBuffer(data))
+req.Header.Set("Content-Type", "application/json")
+```
+
+---
+
+## JSON Serialization – `encoding/json`
+
+### Marshaling (Go → JSON)
+```go
+type User struct { Name string; Age int }
+user := User{Name: "Dilip", Age: 21}
+jsonBytes, _ := json.Marshal(user)
+fmt.Println(string(jsonBytes)) // {"Name":"Dilip","Age":21}
+```
+
+### Unmarshaling (JSON → Go)
+```go
+jsonData := []byte(`{"name":"Dilip","age":21}`)
+var user User
+json.Unmarshal(jsonData, &user)
+fmt.Println(user.Name, user.Age)
+```
+
+### Struct Tags for JSON
+```go
+type User struct {
+    Name  string `json:"name"`
+    Age   int    `json:"age"`
+    Email string `json:"email,omitempty"`
+    Pass  string `json:"-"`
+}
+```
+- `omitempty` – omit empty fields.
+- `json:"-"` – exclude from output (e.g., passwords).
+
+---
+
+## Form Data
+
+### URL‑Encoded Forms (`application/x-www-form-urlencoded`)
+```go
+err := r.ParseForm()
+name := r.FormValue("name")
+age  := r.FormValue("age")
+```
+
+### Multipart Forms (`multipart/form-data`)
+```go
+err := r.ParseMultipartForm(10 << 20) // 10 MiB
+file, header, err := r.FormFile("profile")
+defer file.Close()
+fmt.Println(header.Filename)
+```
+
+---
+
+## Cross‑Compilation
+
+Set `GOOS` and `GOARCH` to target another platform:
+```bash
+# Build Windows binary on Linux
+GOOS=windows GOARCH=amd64 go build -o app.exe
+
+# Build Linux binary
+GOOS=linux GOARCH=amd64 go build -o app
+
+# macOS (Intel)
+GOOS=darwin GOARCH=amd64 go build -o app
+
+# macOS (Apple Silicon)
+GOOS=darwin GOARCH=arm64 go build -o app
+```
+
+**Why useful:** Build once on your development machine (e.g., Windows) and deploy to any target (Linux containers, cloud VMs, Docker, CI/CD pipelines).
+
+---
+
+## Complete API Client Example
+```go
+package main
+
+import (
+    "encoding/json"
+    "fmt"
+    "io"
+    "net/http"
+)
+
+type User struct {
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+
+func main() {
+    resp, err := http.Get("https://example.com/users/1")
+    if err != nil { fmt.Println("Request error:", err); return }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != http.StatusOK {
+        fmt.Println("HTTP error:", resp.Status)
+        return
+    }
+
+    data, err := io.ReadAll(resp.Body)
+    if err != nil { return }
+
+    var user User
+    if err := json.Unmarshal(data, &user); err != nil {
+        fmt.Println("JSON error:", err)
+        return
+    }
+    fmt.Println("Name:", user.Name)
+    fmt.Println("Email:", user.Email)
+}
+```
+
+---
+
+## Common Backend Patterns
+
+### Decode JSON from Request
+```go
+var user User
+if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+    http.Error(w, "Invalid JSON", http.StatusBadRequest)
+    return
+}
+```
+
+### Encode JSON to Response
+```go
+w.Header().Set("Content-Type", "application/json")
+json.NewEncoder(w).Encode(user)
+```
+
+---
+
+> **Note** – All code examples assume the standard library imports (`fmt`, `io`, `net/http`, `net/url`, `encoding/json`, `time`, `bytes`, `strings`). Add them as needed.

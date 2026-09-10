@@ -1,0 +1,129 @@
+---
+title: "Module 5: Memory Management & Low-Level Operations"
+description: "Go memory model, pointers, stack vs heap, escape analysis, and garbage collection with Node.js comparisons."
+---
+
+## Pointers
+
+A pointer stores the memory address of another variable.
+
+```go
+x := 10
+p := &x // address of x
+fmt.Println(p) // e.g., 0xc0000120a0
+```
+
+* `&` obtains the address.
+* `*p` dereferences the pointer to get the value.
+
+```go
+fmt.Println(*p) // 10
+```
+
+### Modifying Through a Pointer
+
+```go
+*p = 50
+fmt.Println(x) // 50
+```
+
+### Pointer Declaration
+
+```go
+var p *int // nil pointer
+fmt.Println(p) // <nil>
+```
+
+Never dereference a nil pointer (`*p`) – it panics.
+
+## Pass‑by‑Value vs Pointers
+
+Go passes arguments **by value** (copies). To modify the original data you pass a pointer.
+
+```go
+func change(x int) { x = 100 }
+func main() { a := 10; change(a); fmt.Println(a) } // 10
+```
+
+```go
+func change(p *int) { *p = 100 }
+func main() { a := 10; change(&a); fmt.Println(a) } // 100
+```
+
+The pointer itself is still passed by value (a copy of the address).
+
+## Pointers with Structs
+
+```go
+type User struct { Name string; Age int }
+func update(u *User) { u.Name = "Rahul"; u.Age = 25 }
+func main() { user := User{Name:"Dilip", Age:21}; update(&user); fmt.Println(user) }
+```
+
+Go automatically dereferences struct pointers for field access, so `p.Name` works.
+
+## Stack vs Heap
+
+- **Stack**: fast allocation for local variables; reclaimed automatically when the function returns.
+- **Heap**: for values that outlive the current stack frame.
+
+```go
+func calculate() { x := 10; fmt.Println(x) } // x on stack
+```
+
+```go
+func createUser() *User { u := User{Name:"Dilip"}; return &u } // u escapes to heap
+```
+
+### Escape Analysis
+
+The compiler decides whether a variable must escape to the heap. Use `go build -gcflags="-m"` to see messages like `moved to heap: u`.
+
+## Garbage Collection (GC)
+
+Go has an automatic, concurrent **tri‑color mark‑and‑sweep** collector.
+
+1. **Mark** reachable objects (white → gray → black).
+2. **Sweep** unmarked (white) objects and reclaim memory.
+
+The GC runs concurrently, so it rarely stops the world for long.
+
+### Simple Example
+
+```go
+func main() {
+    data := make([]int, 1_000_000)
+    _ = data // use it
+} // data becomes unreachable → GC can reclaim
+```
+
+## Go GC vs Node.js (V8) GC
+
+Both languages use automatic garbage collection, but Go gives you explicit pointers and escape analysis, while JavaScript abstracts references.
+
+| Aspect | Go | Node.js (V8) |
+|--------|----|--------------|
+| Memory Model | Stack + Heap, explicit pointers | Heap only, opaque references |
+| Escape Analysis | Compiler decides heap allocation | No compile‑time escape analysis |
+| GC Type | Concurrent tri‑color mark‑and‑sweep | Mostly generational, stop‑the‑world phases |
+| Manual Free | Not possible (no `free`) | Not possible |
+
+## Interview Tip: Pointer vs Reference
+
+- Go: `p := &x` – a true memory address; dereference with `*p`.
+- JavaScript: variables hold *references* to objects; you never see raw addresses.
+
+## Practical Backend Example
+
+```go
+func updateUser(u *User) { u.Name = "Dilip" }
+func main() {
+    user := User{Name:"Old", Age:21}
+    updateUser(&user)
+    fmt.Println(user.Name) // Dilip
+}
+```
+
+The pointer allows the function to modify the original struct without copying.
+
+---

@@ -1,0 +1,21 @@
+{
+  "name": "go",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/check": "latest",
+    "@astrojs/mdx": "latest",
+    "@prosefly/astro-components": "^0.7.0",
+    "@prosefly/astro-theme-lotus": "^0.8.0",
+    "@tailwindcss/vite": "latest",
+    "astro": "^7.3.2",
+    "tailwindcss": "latest",
+    "typescript": "^6.0.3"
+  }
+}

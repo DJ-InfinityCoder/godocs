@@ -1,0 +1,209 @@
+---
+title: "Module 11: Synchronization Primitives"
+description: "Learn Go's sync primitives (WaitGroup, Mutex, RWMutex, atomic) and the race detector for safe concurrent programming."
+---
+
+## Overview
+
+When multiple goroutines access the same data, race conditions can appear—different goroutines read/write the data at the same time, leading to nondeterministic results. Go provides a small but powerful `sync` package (and the `sync/atomic` package) to coordinate access and to make concurrent programs safe and predictable.
+
+The most common primitives are:
+
+- **`sync.WaitGroup`** – wait for a collection of goroutines to finish.
+- **`sync.Mutex`** – a mutual‑exclusion lock that guarantees only one goroutine accesses a critical section at a time.
+- **`sync.RWMutex`** – a lock that distinguishes between readers (multiple can hold the lock) and writers (exclusive).
+- **`sync/atomic`** – low‑level atomic operations for simple shared values (counters, flags).
+- **Race Detector** – a built‑in tool (`go run -race` or `go test -race`) that reports data races during testing.
+
+Below are minimal examples that you can copy‑paste into a Go file to see each primitive in action.
+
+---
+
+## `sync.WaitGroup`
+
+A `WaitGroup` lets a parent goroutine wait until a set of child goroutines have completed.
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+func worker(id int, wg *sync.WaitGroup) {
+    defer wg.Done() // signals that this goroutine is done
+    fmt.Printf("worker %d starting\n", id)
+    // simulate work
+    // time.Sleep(time.Second)
+    fmt.Printf("worker %d done\n", id)
+}
+
+func main() {
+    var wg sync.WaitGroup
+    for i := 1; i <= 3; i++ {
+        wg.Add(1)        // increment the counter
+        go worker(i, &wg)
+    }
+    wg.Wait()            // block until the counter goes back to 0
+    fmt.Println("all workers finished")
+}
+```
+
+---
+
+## `sync.Mutex`
+
+A `Mutex` protects a critical section so that only one goroutine can execute it at a time.
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+var (
+    counter int
+    mu      sync.Mutex
+)
+
+func inc() {
+    mu.Lock()
+    defer mu.Unlock()
+    counter++
+    fmt.Printf("counter = %d\n", counter)
+}
+
+func main() {
+    var wg sync.WaitGroup
+    for i := 0; i < 5; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            inc()
+        }()
+    }
+    wg.Wait()
+    fmt.Println("final counter:", counter)
+}
+```
+
+---
+
+## `sync.RWMutex`
+
+`RWMutex` allows many readers but only one writer. Use it when reads are frequent and writes are rare.
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+)
+
+var (
+    data = make(map[string]int)
+    rw   sync.RWMutex
+)
+
+func read(key string) int {
+    rw.RLock()
+    defer rw.RUnlock()
+    return data[key]
+}
+
+func write(key string, value int) {
+    rw.Lock()
+    defer rw.Unlock()
+    data[key] = value
+}
+
+func main() {
+    var wg sync.WaitGroup
+    // writer
+    wg.Add(1)
+    go func() {
+        defer wg.Done()
+        write("answer", 42)
+    }()
+    // readers
+    for i := 0; i < 3; i++ {
+        wg.Add(1)
+        go func(id int) {
+            defer wg.Done()
+            fmt.Printf("reader %d sees %d\n", id, read("answer"))
+        }(i)
+    }
+    wg.Wait()
+}
+```
+
+---
+
+## `sync/atomic`
+
+Atomic operations provide lock‑free synchronization for simple values. They are faster than a mutex but work only on a limited set of types.
+
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "sync/atomic"
+)
+
+func main() {
+    var cnt int64 // must be 64‑bit aligned for atomic ops
+    var wg sync.WaitGroup
+    for i := 0; i < 1000; i++ {
+        wg.Add(1)
+        go func() {
+            defer wg.Done()
+            atomic.AddInt64(&cnt, 1)
+        }()
+    }
+    wg.Wait()
+    fmt.Printf("final counter: %d\n", atomic.LoadInt64(&cnt))
+}
+```
+
+---
+
+## Race Detector
+
+The race detector is a compile‑time/run‑time tool that reports unsynchronized accesses. Run your program with `-race`:
+
+```bash
+go run -race main.go
+```
+
+If the detector prints messages like:
+
+```
+WARNING: DATA RACE
+Read at 0x00c0000a4000 by goroutine 7:
+    main.main()
+        /path/to/main.go:15 +0x39
+
+Previous write at 0x00c0000a4000 by goroutine 6:
+    main.main()
+        /path/to/main.go:12 +0x2c
+```
+
+then you have a data race that needs to be fixed—usually by introducing a `Mutex`, `RWMutex`, or atomic operation.
+
+---
+
+## Summary
+
+- Use **`WaitGroup`** to wait for a set of concurrent tasks.
+- Use **`Mutex`** for exclusive access to shared mutable state.
+- Use **`RWMutex`** when reads dominate writes.
+- Use **`sync/atomic`** for fast, lock‑free counters or flags.
+- Run **`go test -race`** (or `go run -race`) to catch accidental races early.
+
+Mastering these primitives will keep your Go services reliable and performant as they scale.

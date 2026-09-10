@@ -1,0 +1,234 @@
+---
+title: "Module 14: Interfaces, SOLID & Design Patterns"
+description: "Deep dive into Go interfaces, SOLID principles, dependency injection and common design patterns, with Node.js/TypeScript parallels."
+---
+
+## Overview
+
+Interfaces are the cornerstone of Go’s **behavior contracts** – they describe *what* a type can do, not *how* it does it. Combined with the **SOLID** design principles and **Dependency Injection (DI)**, they enable highly maintainable, testable, and extensible backend services. This module walks through each concept, shows idiomatic Go examples, and maps them to familiar JavaScript/TypeScript patterns.
+
+---
+
+## 1. Interfaces – The Behavior Contract
+
+```go
+package main
+
+import "fmt"
+
+type Speaker interface {
+    Speak()
+}
+
+type Dog struct{}
+
+func (Dog) Speak() { fmt.Println("Woof") }
+
+type Cat struct{}
+
+func (Cat) Speak() { fmt.Println("Meow") }
+
+func makeSound(s Speaker) { s.Speak() }
+
+func main() {
+    makeSound(Dog{}) // prints "Woof"
+    makeSound(Cat{}) // prints "Meow"
+}
+```
+
+- **Implicit implementation** – any type that provides the required methods satisfies the interface automatically; no `implements` keyword.
+- **Duck typing** – “If it looks like a `Speaker`, it *is* a `Speaker`.”
+
+### 1.1 Empty Interface (`any`)
+
+Before Go 1.18 the empty interface was written as `interface{}`; now the alias `any` is preferred.
+
+```go
+var v any
+v = 10          // int
+v = "hello"    // string
+v = []int{1,2}  // slice
+```
+
+Use `any` sparingly – it discards compile‑time type safety.
+
+---
+
+## 2. Type Assertions & Type Switches
+
+```go
+var x any = 42
+value, ok := x.(int) // safe assertion
+if ok { fmt.Println(value) }
+```
+
+```go
+func printType(v any) {
+    switch t := v.(type) {
+    case int:
+        fmt.Println("int", t)
+    case string:
+        fmt.Println("string", t)
+    default:
+        fmt.Println("unknown type")
+    }
+}
+```
+
+- **Assertion** – useful when you expect a single concrete type.
+- **Switch** – handles multiple possible concrete types.
+
+---
+
+## 3. SOLID Principles in Go
+
+| Principle | Goal | Go‑idiomatic way |
+|-----------|------|------------------|
+| **S** – Single Responsibility | One reason to change | Split services into small, focused structs (e.g., `UserService`, `EmailService`). |
+| **O** – Open/Closed | Extend without modification | Add new implementations of an interface (`PaymentProcessor`) rather than editing existing code. |
+| **L** – Liskov Substitution | Subtype must be usable via its base interface | Avoid interfaces that promise impossible behavior (e.g., `Flyer` implemented by a `Penguin`). |
+| **I** – Interface Segregation | Small, client‑specific contracts | Prefer tiny interfaces (`Reader`, `Writer`) over “fat” ones. |
+| **D** – Dependency Inversion | Depend on abstractions, not concretions | Functions accept interfaces (`UserRepository`) and receive concrete implementations via DI. |
+
+### 3.1 Small Interfaces – the Go Way
+
+```go
+type UserRepository interface { Create(u User); Get(id int) User }
+
+type EmailSender interface { Send(to, body string) error }
+```
+
+A struct can compose multiple small interfaces instead of implementing a massive one.
+
+---
+
+## 4. Dependency Injection (DI)
+
+### 4.1 Constructor Injection (the most common pattern)
+
+```go
+type UserRepository interface { GetUser(id int) string }
+
+type PostgresRepo struct{}
+func (PostgresRepo) GetUser(id int) string { return "Postgres User" }
+
+type UserService struct { repo UserRepository }
+
+func NewUserService(r UserRepository) *UserService { return &UserService{repo: r} }
+
+func (s *UserService) Show(id int) { fmt.Println(s.repo.GetUser(id)) }
+
+func main() {
+    repo := PostgresRepo{}
+    svc := NewUserService(repo)
+    svc.Show(10)
+}
+```
+
+- The high‑level `UserService` depends **only** on the abstraction `UserRepository`.
+- Swapping the implementation (e.g., `MongoRepo`) requires **no change** to `UserService`.
+
+### 4.2 Testing with DI
+
+```go
+type FakeRepo struct{}
+func (FakeRepo) GetUser(id int) string { return "Fake User" }
+
+func TestUserService(t *testing.T) {
+    svc := NewUserService(FakeRepo{})
+    // test svc.Show(...)
+}
+```
+
+No real database is needed – the fake repository satisfies the same contract.
+
+---
+
+## 5. Common Design Patterns in Go
+
+| Pattern | Go idiom | Typical use‑case |
+|---------|----------|-----------------|
+| **Factory** | Functions returning interfaces | `NewPaymentProcessor(config) PaymentProcessor` |
+| **Decorator** | Wrapping structs with embedded fields | `type LoggingRepo struct{ inner UserRepository }` |
+| **Adapter** | Convert one interface to another | `type HTTPAdapter struct{ client *http.Client }` |
+| **Strategy** | Interface for interchangeable algorithms | `type SortStrategy interface { Sort([]int) []int }` |
+| **Observer** | Channels or `sync.Cond` | Event broadcasting, websocket fans |
+| **Singleton** (rare) | Package‑level variable + `sync.Once` | Global config loader |
+
+### 5.1 Example – Strategy for Payment Processors
+
+```go
+type PaymentProcessor interface { Pay(amount int) }
+
+type Stripe struct{}
+func (Stripe) Pay(a int) { fmt.Println("Stripe paid", a) }
+
+type Razorpay struct{}
+func (Razorpay) Pay(a int) { fmt.Println("Razorpay paid", a) }
+
+func Checkout(p PaymentProcessor, amount int) { p.Pay(amount) }
+
+func main() {
+    var p PaymentProcessor = Stripe{}
+    Checkout(p, 100) // Stripe implementation
+    p = Razorpay{}
+    Checkout(p, 200) // Razorpay implementation – OCP in action
+}
+```
+
+---
+
+## 6. Go vs. TypeScript/JavaScript
+
+| Concept | Go | TypeScript |
+|---------|----|------------|
+| Interface definition | `type Speaker interface { Speak() }` | `interface Speaker { speak(): void }` |
+| Implementation | Implicit, structural | Usually `class Dog implements Speaker` |
+| Runtime type check | `x.(Speaker)` (assertion) | No runtime check – compile‑time only |
+| `any` | Alias for empty interface | `any` (untyped) |
+| DI | Manual constructor injection | Libraries (Inversify, tsyringe) |
+| Generics | Go 1.18+ `type Slice[T any] []T` | TS generics `Array<T>` |
+
+---
+
+## 7. Quick Reference Cheat‑Sheet
+
+```
+// Interface
+type Reader interface { Read(p []byte) (n int, err error) }
+
+// Assertion
+r, ok := x.(Reader)
+
+// Type switch
+switch v := x.(type) {
+case Reader:
+    // use v
+case Writer:
+    // use v
+}
+
+// DI – constructor
+func NewService(repo UserRepository) *Service { return &Service{repo} }
+
+// Factory pattern
+func NewProcessor(t string) PaymentProcessor {
+    switch t {
+    case "stripe":   return Stripe{}
+    case "razorpay": return Razorpay{}
+    }
+    return nil
+}
+```
+
+---
+
+## 8. Summary
+
+- **Interfaces** provide a clean contract for behavior; Go’s implicit implementation enables flexible, duck‑typed code.
+- **SOLID** is realized in Go through small interfaces, composition, and manual DI.
+- **Dependency Injection** decouples high‑level business logic from low‑level implementations, making testing trivial.
+- Familiar **design patterns** (Factory, Strategy, Decorator, Adapter) map naturally to Go idioms.
+- Understanding the parallels to TypeScript helps transition between the ecosystems while respecting Go’s runtime‑type assertions and compile‑time safety.
+
+Master these concepts and you’ll write Go services that are clean, extensible, and interview‑ready.

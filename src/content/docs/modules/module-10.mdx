@@ -1,0 +1,202 @@
+---
+title: "Module 10: Goroutines & Scheduling"
+description: "Understanding Go's lightweight concurrency model, the scheduler, and how to use goroutines for backend workloads."
+---
+
+## Overview
+
+Go’s power for backend development stems from **goroutines** – cheap, lightweight functions managed by the Go runtime scheduler. Compared to Node.js’s async/await + event loop, Go provides goroutines + scheduler, which enables massive concurrency with minimal overhead.
+
+```
+Node.js      → async/await + event loop
+Go           → goroutine + scheduler (GMP model)
+```
+
+---
+
+## Concurrency vs Parallelism
+
+| Concept      | Definition                                                                                     |
+|--------------|-----------------------------------------------------------------------------------------------|
+| **Concurrency** | Multiple tasks are in progress at the same time, but not necessarily executing simultaneously. The scheduler interleaves them on a single CPU core. |
+| **Parallelism**  | Tasks actually run at the same instant on multiple CPU cores.                           |
+
+A system can be **concurrent without being parallel** (single core switching between tasks). With multiple cores you can achieve **parallelism**.
+
+---
+
+## What Is a Goroutine?
+A goroutine is a function that runs concurrently with other goroutines, created by prefixing the call with the `go` keyword.
+
+```go
+func sayHello() {
+    fmt.Println("Hello")
+}
+
+func main() {
+    go sayHello() // ← runs as a goroutine
+    fmt.Println("main finished")
+}
+```
+The Go scheduler decides when the goroutine runs.
+
+### Why Goroutines?
+Backend workloads often involve independent operations:
+- Send email
+- Process images
+- Write logs
+- Call external APIs
+- Save to a database
+Doing them sequentially blocks the request, but spawning separate goroutines lets the work progress concurrently.
+
+---
+
+## Basic Goroutine Example
+```go
+package main
+
+import (
+    "fmt"
+    "time"
+)
+
+func task(name string) {
+    for i := 1; i <= 3; i++ {
+        fmt.Println(name, i)
+        time.Sleep(500 * time.Millisecond)
+    }
+}
+
+func main() {
+    go task("Task A")
+    go task("Task B")
+    // Wait long enough for the demo; real code uses sync.WaitGroup.
+    time.Sleep(2 * time.Second)
+}
+```
+Typical output (order nondeterministic):
+```
+Task A 1
+Task B 1
+Task A 2
+Task B 2
+Task A 3
+Task B 3
+```
+
+---
+
+## The Main Goroutine & Early Exit
+The program’s entry point runs in the **main goroutine**. When `main()` returns, the program exits, terminating any still‑running goroutines.
+
+```go
+func main() {
+    go fmt.Println("Hello from goroutine")
+    fmt.Println("Main finished") // program may exit before the goroutine prints.
+}
+```
+**Solution:** synchronize with `sync.WaitGroup` (covered in Module 11).
+
+---
+
+## Goroutine Cost & Stack
+- Initial stack size ≈ **2 KB** (grows/shrinks on demand).
+- Much cheaper than OS threads, enabling thousands‑to‑millions of concurrent goroutines.
+
+---
+
+## The Go Scheduler (GMP Model)
+The scheduler maps **Goroutines (G)** → **Processors (P)** → **OS Threads (M)**.
+
+```
+G (what should run)   →   P (runtime resource)   →   M (OS thread)   →   OS
+```
+- **G** – a lightweight coroutine containing the function, stack, and state.
+- **M** – a native OS thread that actually executes Go code.
+- **P** – a logical processor that holds a run‑queue of runnable goroutines and provides the permission to execute Go code on an M.
+
+The number of Ps is controlled by `runtime.GOMAXPROCS` (defaults to the number of logical CPUs).
+
+```go
+fmt.Println("GOMAXPROCS:", runtime.GOMAXPROCS(0)) // inspect
+runtime.GOMAXPROCS(4) // manually set (rarely needed)
+```
+**Why P?**
+P decouples goroutine scheduling from OS thread management, allowing the runtime to efficiently move goroutines between threads and keep OS threads busy while some goroutines block on I/O.
+
+---
+
+## Scheduler in Action
+Imagine six goroutines (G1‑G6) and two Ps (P1, P2):
+```
+P1 → G1 G3 G5
+P2 → G2 G4 G6
+```
+Each P runs on its own M (OS thread). When a goroutine blocks (e.g., on I/O), the scheduler pulls another runnable goroutine from the P’s run‑queue.
+
+### Blocking Example
+```go
+go func() {
+    resp, _ := http.Get("https://example.com")
+    fmt.Println(resp.Status)
+}()
+// Other goroutines continue while the above waits for network I/O.
+```
+The blocked goroutine yields its M, allowing others to make progress.
+
+---
+
+## Runtime Helpers
+- `runtime.Gosched()` – voluntarily yields the processor, allowing other runnable goroutines a chance to run. Mostly useful for experiments, not for regular synchronization.
+- `runtime.NumGoroutine()` – returns the current number of goroutines (helpful for debugging).
+
+---
+
+## Goroutines in Backend Services
+A typical HTTP handler can spin off independent work:
+```go
+func handler(w http.ResponseWriter, r *http.Request) {
+    go sendEmail(r.Context(), emailData)
+    go generateThumbnail(r.Context(), imgData)
+    go logRequest(r)
+    fmt.Fprintln(w, "Request accepted")
+}
+```
+Each task runs concurrently while the response is immediately returned. Proper synchronization (wait groups, channels, context cancellation) will be introduced in later modules.
+
+---
+
+## Goroutine vs OS Thread Comparison
+| Feature               | Goroutine                                 | OS Thread                               |
+|-----------------------|-------------------------------------------|-----------------------------------------|
+| Managed by            | Go runtime scheduler                     | Operating system                        |
+| Initial stack size    | ~2 KB (grows as needed)                  | Typically 1 MB+                         |
+| Creation cost         | Extremely low                             | Relatively high                         |
+| Switching overhead    | Scheduler (user‑space)                   | Kernel‑level context switch             |
+| Number                | Can be very large (hundreds of thousands) | Limited by OS resources                |
+
+---
+
+## Visual Model of the Scheduler
+```
+Your Program
+ ├─ G1, G2, G3, … (goroutines)
+ └─ Go Scheduler
+      ├─ P1, P2, … (processors, controlled by GOMAXPROCS)
+      │    └─ each holds a run‑queue of Gs
+      └─ M1, M2, … (OS threads) – execute code for a P
+```
+When a goroutine blocks, its M is released and the scheduler picks another runnable goroutine from the same P’s queue.
+
+---
+
+## Key Takeaways
+- Goroutines provide **concurrency**; **parallelism** depends on the number of Ps/CPU cores.
+- The **GMP model** (Goroutine → Processor → Machine) is the core of Go’s scheduler.
+- Goroutine stacks start tiny (~2 KB) and grow dynamically, making them cheap to create in large numbers.
+- The main goroutine exiting terminates the program – synchronization is required for reliable shutdown.
+- Runtime helpers (`runtime.Gosched`, `runtime.NumGoroutine`) aid debugging but are not substitutes for proper synchronization primitives.
+
+---
+
+> **Next up:** Module 11 will introduce synchronization primitives (`sync.WaitGroup`, `Mutex`, `RWMutex`, `atomic`) and how to coordinate goroutines safely.

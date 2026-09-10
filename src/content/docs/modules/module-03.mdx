@@ -1,0 +1,303 @@
+---
+title: "Module 3: Flow Control & Basic Data Structures"
+description: "Control structures, arrays, slices, and maps in Go, with comparisons to JavaScript."
+---
+
+## Flow Control
+
+### if / else
+
+Go's `if` is similar to JavaScript but **does not require parentheses** around the condition.
+
+```go
+age := 21
+
+if age >= 18 {
+    fmt.Println("Adult")
+} else {
+    fmt.Println("Minor")
+}
+```
+
+> **Important:** No `()` around the condition and `{}` are required.
+
+#### Short Initialization
+
+You can declare a variable directly inside an `if` statement:
+
+```go
+if age := 21; age >= 18 {
+    fmt.Println("Adult")
+}
+```
+
+The variable `age` exists only within the `if‑else` block, which is handy for error handling:
+
+```go
+if err := doSomething(); err != nil {
+    fmt.Println(err)
+}
+```
+
+### else if
+
+```go
+marks := 75
+
+if marks >= 90 {
+    fmt.Println("A")
+} else if marks >= 60 {
+    fmt.Println("B")
+} else {
+    fmt.Println("C")
+}
+```
+
+Same basic idea as JavaScript.
+
+## switch
+
+Go's `switch` is cleaner than the traditional JavaScript version.
+
+```go
+day := 2
+
+switch day {
+case 1:
+    fmt.Println("Monday")
+case 2:
+    fmt.Println("Tuesday")
+case 3:
+    fmt.Println("Wednesday")
+default:
+    fmt.Println("Invalid day")
+}
+```
+
+* No `break` needed – each case stops automatically.
+
+### Multiple Conditions in a case
+
+```go
+day := 6
+
+switch day {
+case 1, 2, 3, 4, 5:
+    fmt.Println("Weekday")
+case 6, 7:
+    fmt.Println("Weekend")
+}
+```
+
+### Expression Switch (no tag value)
+
+```go
+age := 21
+
+switch {
+case age < 13:
+    fmt.Println("Child")
+case age < 18:
+    fmt.Println("Teenager")
+default:
+    fmt.Println("Adult")
+}
+```
+
+### fallthrough
+
+```go
+switch number := 1; number {
+case 1:
+    fmt.Println("One")
+    fallthrough
+case 2:
+    fmt.Println("Two")
+}
+```
+
+Outputs:
+```
+One
+Two
+```
+
+> **Caution:** Use `fallthrough` sparingly.
+
+### Type Switch
+
+```go
+var value any = "Hello"
+
+switch v := value.(type) {
+case string:
+    fmt.Println("String:", v)
+case int:
+    fmt.Println("Integer:", v)
+default:
+    fmt.Println("Unknown type")
+}
+```
+
+## for Loop
+
+Go has only one looping keyword: `for`.
+
+### Classic for
+
+```go
+for i := 0; i < 5; i++ {
+    fmt.Println(i)
+}
+```
+
+Equivalent to JavaScript `for (let i = 0; i < 5; i++) { … }`.
+
+### While‑style loop
+
+```go
+i := 0
+for i < 5 {
+    fmt.Println(i)
+    i++
+}
+```
+
+Works like `while (i < 5) { … }` in JS.
+
+### Infinite loop
+
+```go
+for {
+    fmt.Println("Running...")
+}
+```
+
+Common in servers.
+
+### break & continue
+
+```go
+for i := 0; i < 10; i++ {
+    if i == 5 { break }
+    fmt.Println(i)
+}
+```
+
+```go
+for i := 0; i < 5; i++ {
+    if i == 2 { continue }
+    fmt.Println(i)
+}
+```
+
+## goto (rarely used)
+
+```go
+i := 0
+start:
+    fmt.Println(i)
+    i++
+    if i < 3 { goto start }
+```
+
+## Arrays
+
+Fixed‑size collections.
+
+```go
+var numbers [5]int               // declaration
+numbers := [5]int{10, 20, 30, 40, 50} // literal
+fmt.Println(len(numbers)) // 5
+```
+
+Arrays have the length as part of the type (`[5]int` ≠ `[3]int`).
+
+## Slices
+
+Dynamic, resizable views onto an underlying array.
+
+```go
+numbers := []int{10, 20, 30}
+numbers = append(numbers, 40) // [10 20 30 40]
+```
+
+You can also create slices with `make`:
+
+```go
+s := make([]int, 5)      // length 5, zero‑filled
+s2 := make([]int, 5, 10) // length 5, capacity 10
+```
+
+### Slice anatomy
+
+A slice stores **pointer**, **length**, and **capacity**.
+
+### Sharing & Sub‑slicing
+
+```go
+arr := []int{10, 20, 30, 40}
+part := arr[1:3] // [20 30]
+part[0] = 200
+// arr becomes [10 200 30 40]
+```
+
+### Removing an element (preserving order)
+
+```go
+idx := 2
+numbers = append(numbers[:idx], numbers[idx+1:]...)
+```
+
+### Removing without preserving order (O(1))
+
+```go
+idx := 2
+numbers[idx] = numbers[len(numbers)-1]
+numbers = numbers[:len(numbers)-1]
+```
+
+## Maps
+
+Key‑value stores, similar to JavaScript objects.
+
+```go
+ages := map[string]int{"Dilip": 21, "Rahul": 22}
+ages["Dilip"] = 23 // update
+fmt.Println(ages["Dilip"]) // 23
+```
+
+### Check existence (comma‑ok)
+
+```go
+age, ok := ages["Dilip"]
+if ok {
+    fmt.Println("Age:", age)
+}
+```
+
+### Delete
+
+```go
+delete(ages, "Dilip")
+```
+
+### Iterate
+
+```go
+for name, age := range ages {
+    fmt.Println(name, age)
+}
+```
+
+## Summary Table
+
+| Feature | Array | Slice | Map |
+|---|---|---|---|
+| Syntax | `[5]int` | `[]int` | `map[string]int` |
+| Size | Fixed | Dynamic | Dynamic |
+| Access | Index | Index | Key |
+| Order | Preserved | Preserved | No guaranteed order |
+| Common use | Low‑level data | Most collections | Key‑value look‑ups |
+
+---

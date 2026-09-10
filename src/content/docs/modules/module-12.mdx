@@ -1,0 +1,275 @@
+---
+title: "Module 12: Communication via Channels"
+description: "Learn Go's channel primitives for goroutine communication, including unbuffered/buffered channels, closing, ranging, select, and channel directions."
+---
+
+## Overview
+
+In Module 10 we introduced goroutines, and Module 11 covered synchronization with `sync.WaitGroup`, `sync.Mutex`, `sync.RWMutex`, and atomic operations. The next step is **communication**: how goroutines exchange data safely without sharing memory directly. Go’s built‑in primitive for this is the **channel**.
+
+> **Core principle:** *“Do not communicate by sharing memory; share memory by communicating.”* – Rob Pike
+
+A channel is a typed pipe that lets one goroutine **send** a value and another **receive** it. The language and runtime enforce safe, blocking semantics, making channels a natural way to build producer‑consumer pipelines.
+
+---
+
+## Creating a Channel
+
+```go
+ch := make(chan int)      // unbuffered, carries int values
+chStr := make(chan string) // unbuffered, carries string values
+```
+
+*The type argument (`int`, `string`, custom struct, etc.) defines the kind of data that can travel through the channel.*
+
+---
+
+## Sending and Receiving
+
+```go
+// Send
+ch <- 42
+
+// Receive
+value := <-ch
+```
+
+The arrow direction indicates the flow of data. A send (`ch <- value`) blocks until a receiver is ready, and a receive (`<-ch`) blocks until a sender provides a value.
+
+---
+
+## Basic Example (Unbuffered)
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ch := make(chan string)
+
+    go func() {
+        ch <- "Hello from goroutine"
+    }()
+
+    msg := <-ch
+    fmt.Println(msg)
+}
+```
+
+**Output:**
+```
+Hello from goroutine
+```
+
+The main goroutine pauses at `<-ch` until the anonymous goroutine sends the string.
+
+---
+
+## Unbuffered vs Buffered Channels
+
+| Feature | Unbuffered (`make(chan T)`) | Buffered (`make(chan T, n)`) |
+|---------|-----------------------------|-------------------------------|
+| Capacity | 0 (no storage) | `n` values can be queued |
+| Send blocks | Until a receiver is ready | Until buffer is full |
+| Receive blocks | Until a sender is ready | Until buffer is empty |
+| Typical use | Tight hand‑off between goroutines | Decoupling producers & consumers |
+
+### Buffered Example
+```go
+package main
+
+import "fmt"
+
+func main() {
+    ch := make(chan int, 3) // capacity 3
+    ch <- 10
+    ch <- 20
+    ch <- 30
+    fmt.Println(<-ch) // 10
+    fmt.Println(<-ch) // 20
+    fmt.Println(<-ch) // 30
+}
+```
+
+---
+
+## Inspecting Length and Capacity
+
+```go
+len(ch) // number of queued values
+cap(ch) // total capacity (0 for unbuffered)
+```
+
+These helpers are useful for monitoring queue health in production services.
+
+---
+
+## Closing a Channel
+
+A **sender** can signal that no more values will be sent:
+
+```go
+close(ch)
+```
+
+Closing does **not** discard remaining buffered values; they can still be received. After a channel is closed, a receive yields the zero value of the element type and `ok == false`.
+
+```go
+value, ok := <-ch
+if !ok {
+    // channel closed and empty
+}
+```
+
+---
+
+## Ranging Over a Channel
+
+A common pattern is to read until the channel is closed:
+
+```go
+for v := range ch {
+    fmt.Println(v)
+}
+```
+
+The loop terminates automatically when `close(ch)` is called and the buffer is drained.
+
+---
+
+## Producer‑Consumer Pattern
+
+```go
+package main
+
+import "fmt"
+
+func producer(ch chan<- int) {
+    for i := 1; i <= 5; i++ {
+        ch <- i * 10
+    }
+    close(ch) // signal end of data
+}
+
+func consumer(ch <-chan int) {
+    for v := range ch {
+        fmt.Println("Received:", v)
+    }
+}
+
+func main() {
+    ch := make(chan int)
+    go producer(ch)
+    consumer(ch)
+}
+```
+
+**Output:**
+```
+Received: 10
+Received: 20
+Received: 30
+Received: 40
+Received: 50
+```
+
+The producer sends values and closes the channel; the consumer iterates until the channel is closed.
+
+---
+
+## `select` – Multiplexing Channels
+
+`select` lets a goroutine wait on **multiple** channel operations simultaneously, similar to a `switch` but for communication.
+
+```go
+select {
+case v := <-ch1:
+    fmt.Println("ch1:", v)
+case v := <-ch2:
+    fmt.Println("ch2:", v)
+case ch3 <- 42:
+    fmt.Println("sent to ch3")
+default:
+    fmt.Println("no activity") // non‑blocking
+}
+```
+
+- If multiple cases are ready, one is chosen pseudo‑randomly.
+- The optional `default` case makes the `select` **non‑blocking**.
+
+---
+
+## Timeout with `select`
+
+A common requirement is to give up waiting after a deadline:
+
+```go
+select {
+case result := <-ch:
+    fmt.Println("Result:", result)
+case <-time.After(2 * time.Second):
+    fmt.Println("Timeout")
+}
+```
+
+The `time.After` channel fires after the specified duration, acting as a watchdog.
+
+---
+
+## Channel Direction Types
+
+Functions can declare a channel as **send‑only** or **receive‑only**, adding compile‑time safety.
+
+```go
+func sendData(ch chan<- int) { ch <- 100 }
+func receiveData(ch <-chan int) int { return <-ch }
+```
+
+- `chan<- T` – can only send values of type `T`.
+- `<-chan T` – can only receive values of type `T`.
+- `chan T` – both send and receive.
+
+Using direction types clarifies intent and prevents accidental misuse.
+
+---
+
+## Deadlocks & Common Pitfalls
+
+- **Unbuffered send without receiver** → deadlock.
+- **Receive without sender** → deadlock.
+- **Sending to a closed channel** → panic.
+- **Neglecting to close a channel** when the receiver expects termination can cause the consumer to block forever.
+
+Always ensure that every send has a matching receive (or a buffered capacity) and that the **sender** closes the channel when done.
+
+---
+
+## Channels vs Mutexes
+
+| Concern | Mutex | Channel |
+|---------|-------|---------|
+| Protect shared state | ✅ | ❌ (use only for communication) |
+| Transfer ownership of data | ❌ | ✅ |
+| Decouple producer & consumer timing | ❌ (requires additional coordination) | ✅ (buffered channels) |
+| Simple exclusive access | ✅ | ✅ (unbuffered channel) |
+
+Both primitives are complementary: use a mutex for protecting mutable state, and channels for passing data or work between goroutines.
+
+---
+
+## Summary
+
+- **Create** a channel with `make(chan T)` (optional buffer size).
+- **Send** using `ch <- value`; **receive** using `value := <-ch`.
+- **Buffered channels** allow asynchronous bursts of work.
+- **Close** with `close(ch)` and detect closure via the comma‑ok idiom or `range`.
+- **`select`** multiplexes multiple channel operations and enables timeouts.
+- **Direction types** (`chan<-`, `<-chan`) improve API safety.
+- Remember deadlock rules: every send must have a receiver and vice‑versa.
+
+Next module (Module 13) will explore **context cancellation** and how it works hand‑in‑hand with channels for graceful shutdowns.
+
+---
+
+> **Next up:** Module 13 – Context & Cancellation

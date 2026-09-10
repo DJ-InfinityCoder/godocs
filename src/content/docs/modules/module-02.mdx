@@ -1,0 +1,142 @@
+---
+title: "Module 2: Lexical Structure, Types & Variables"
+description: "Lexical structure, types and variables in Go, with JavaScript comparisons."
+---
+
+## Lexical Structure
+
+Lexical structure means the basic building blocks that the Go compiler understands.
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    age := 21
+    fmt.Println(age)
+}
+```
+
+Go breaks this into:
+
+- **package** → keyword
+- **main** → identifier
+- **:=** → operator
+- **21** → integer literal
+- **age** → variable
+
+The compiler reads these small pieces and constructs the program.
+
+## Keywords
+
+Go has a fixed set of keywords that have special meaning:
+
+```
+package  import  func  var  const  type  struct  if  else  switch  case  for  range  return  go  defer  interface  map  chan  select
+```
+
+You cannot use a keyword as a variable name. For example, the following is **invalid**:
+
+```go
+var func = 10 // error: "func" is a keyword
+```
+
+## Types & Zero Values
+
+Every value in Go has a **type**. The language provides a rich set of built‑in types:
+
+- **Numeric**: `int`, `int8`, `int16`, `int32`, `int64`, `uint`, `float32`, `float64`
+- **Boolean**: `bool`
+- **String**: `string`
+- **Composite**: arrays, slices, maps, structs, pointers
+- **Interface**: `any` (alias for `interface{}`)
+
+Each type has a **zero value** – the default value when a variable is declared without explicit initialization:
+
+| Type | Zero Value |
+|------|------------|
+| `int`, `float` | `0` |
+| `bool` | `false` |
+| `string` | `""` |
+| Pointers, slices, maps, channels, functions, interfaces | `nil` |
+
+## Variable Declarations
+
+### Short Variable Declaration (`:=`)
+
+The most common way to declare a variable is using `:=`, which both infers the type and initializes the variable:
+
+```go
+age := 21          // inferred as int
+name := "Alice"   // inferred as string
+```
+
+The variable is **block‑scoped** – it lives only within the surrounding `{}` block.
+
+### `var` Declarations
+
+You can also declare variables with the explicit `var` keyword:
+
+```go
+var count int      // zero value 0
+var message string // zero value ""
+```
+
+Multiple variables can be declared in a block:
+
+```go
+var (
+    a int = 5
+    b = "hello" // type inferred
+    c bool        // zero value false
+)
+```
+
+### Constants (`const`)
+
+Constants are immutable values known at compile time:
+
+```go
+const Pi = 3.14159
+const (
+    Red   = "#FF0000"
+    Green = "#00FF00"
+)
+```
+
+## Type Conversions
+
+Go does **not** perform implicit type conversions. You must convert explicitly:
+
+```go
+var i int = 42
+var f float64 = float64(i) // explicit conversion
+```
+
+Attempting to assign a value of a different type without conversion results in a compile‑time error.
+
+## Pointers
+
+A pointer holds the memory address of a value.
+
+```go
+var x int = 10
+p := &x        // p is of type *int
+fmt.Println(*p) // prints 10
+```
+
+Pointers are useful for mutating values from functions and for efficient data structures.
+
+## Summary Table
+
+| Concept | Go Syntax | JavaScript Equivalent |
+|---------|------------|----------------------|
+| Variable declaration | `age := 21` or `var age int` | `let age = 21;` |
+| Constant | `const Pi = 3.14` | `const Pi = 3.14;` |
+| Type inference | `:=` | `let` (type inferred) |
+| Explicit conversion | `float64(i)` | implicit coercion |
+| Zero value | `var s string // ""` | `let s; // undefined` |
+| Pointer | `p := &x` | not available |
+
+---

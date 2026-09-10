@@ -1,0 +1,321 @@
+---
+title: "Module 8: RESTful API Development (Standard & Router)"
+description: "Building real backend APIs in Go with net/http and chi router, project structure, CRUD, testing."
+---
+
+## Overview
+
+In this module we start building real backend APIs in Go. The flow builds on what you learned in Modules 6‑7:
+
+```
+HTTP Request
+    ↓
+Go Server
+    ↓
+Route
+    ↓
+Controller
+    ↓
+Database
+    ↓
+JSON Response
+```
+
+We'll cover:
+
+- Go HTTP server using the standard library
+- Project structure
+- Models and controllers (handlers)
+- Routes and CRUD APIs
+- Router packages like **chi**
+- Testing APIs
+
+---
+
+## REST API Basics
+
+REST (Representational State Transfer) exposes resources through URLs.
+
+| Method | Path            | Action |
+|--------|----------------|--------|
+| GET    | /users         | Get all users |
+| GET    | /users/10      | Get user 10 |
+| POST   | /users         | Create a user |
+| PUT    | /users/10      | Replace/Update user 10 |
+| PATCH  | /users/10      | Partially update user 10 |
+| DELETE | /users/10      | Delete user 10 |
+
+**Key idea:** *HTTP method + URL = operation*.
+
+---
+
+## Standard Library HTTP Server (`net/http`)
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func homeHandler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintln(w, "Hello from Go API")
+}
+
+func main() {
+    http.HandleFunc("/", homeHandler)
+    http.ListenAndServe(":8080", nil)
+}
+```
+Run with `go run .` and visit <http://localhost:8080>.
+
+### `http.HandlerFunc`
+- `w http.ResponseWriter` – writes the HTTP response.
+- `r *http.Request` – contains request data (`Method`, `URL`, `Header`, `Body`).
+
+---
+
+## Sending JSON Responses
+
+```go
+type User struct {
+    ID   int    `json:"id"`
+    Name string `json:"name"`
+}
+
+func userHandler(w http.ResponseWriter, r *http.Request) {
+    user := User{ID: 1, Name: "Dilip"}
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(user)
+}
+```
+
+Response:
+```json
+{ "id": 1, "name": "Dilip" }
+```
+
+### HTTP Status Codes
+```go
+w.WriteHeader(http.StatusCreated) // 201
+```
+Useful constants: `http.StatusOK`, `http.StatusCreated`, `http.StatusBadRequest`, `http.StatusUnauthorized`, `http.StatusNotFound`, `http.StatusInternalServerError`.
+
+---
+
+## Basic Routing with `net/http`
+```go
+func main() {
+    http.HandleFunc("/users", usersHandler)
+    http.HandleFunc("/products", productsHandler)
+    http.ListenAndServe(":8080", nil)
+}
+```
+For larger APIs, a router simplifies path handling.
+
+---
+
+## Router: **chi**
+
+```bash
+go get github.com/go-chi/chi/v5
+```
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+    "github.com/go-chi/chi/v5"
+)
+
+func main() {
+    r := chi.NewRouter()
+    r.Get("/", func(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "Home") })
+    r.Get("/users", getUsers)
+    http.ListenAndServe(":8080", r)
+}
+```
+
+### Route Parameters
+```go
+r.Get("/users/{id}", getUser)
+
+func getUser(w http.ResponseWriter, r *http.Request) {
+    id := chi.URLParam(r, "id")
+    fmt.Println("Requested ID:", id)
+}
+```
+
+---
+
+## Complete CRUD Router Example
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+    "github.com/go-chi/chi/v5"
+)
+
+func main() {
+    r := chi.NewRouter()
+
+    r.Get("/users", getUsers)
+    r.Get("/users/{id}", getUser)
+    r.Post("/users", createUser)
+    r.Put("/users/{id}", updateUser)
+    r.Delete("/users/{id}", deleteUser)
+
+    http.ListenAndServe(":8080", r)
+}
+
+func getUsers(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "Get all users") }
+func getUser(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "Get user:", chi.URLParam(r, "id")) }
+func createUser(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "Create user") }
+func updateUser(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "Update user:", chi.URLParam(r, "id")) }
+func deleteUser(w http.ResponseWriter, r *http.Request) { fmt.Fprintln(w, "Delete user:", chi.URLParam(r, "id")) }
+```
+
+---
+
+## Project Structure
+A simple learning‑friendly layout:
+```
+my-api/
+│   go.mod
+│   go.sum
+│   main.go
+│
+├── handlers/
+│   └── user.go
+├── models/
+│   └── user.go
+└── cmd/
+    └── server/
+        └── main.go   // optional entry point for larger projects
+```
+Later you can evolve to the more conventional `cmd/`, `internal/`, `pkg/` layout.
+
+---
+
+## Models
+```go
+type User struct {
+    ID    int    `json:"id"`
+    Name  string `json:"name"`
+    Email string `json:"email"`
+}
+```
+
+---
+
+## Handlers (Controllers)
+```go
+func getUsers(w http.ResponseWriter, r *http.Request) {
+    users := []User{{ID: 1, Name: "Dilip", Email: "dilip@example.com"}, {ID: 2, Name: "Rahul", Email: "rahul@example.com"}}
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(users)
+}
+```
+
+### GET All (`GET /users`)
+
+### GET One (`GET /users/{id}`)
+```go
+func getUser(w http.ResponseWriter, r *http.Request) {
+    id := chi.URLParam(r, "id")
+    user := User{ID: 10, Name: "Dilip", Email: "dilip@example.com"}
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(user)
+    _ = id // placeholder for DB lookup
+}
+```
+
+### POST Create (`POST /users`)
+```go
+func createUser(w http.ResponseWriter, r *http.Request) {
+    var user User
+    if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+    user.ID = 3 // mock generated ID
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(http.StatusCreated)
+    json.NewEncoder(w).Encode(user)
+}
+```
+
+### PUT Update (`PUT /users/{id}`)
+```go
+func updateUser(w http.ResponseWriter, r *http.Request) {
+    id := chi.URLParam(r, "id")
+    var user User
+    if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+        http.Error(w, "Invalid JSON", http.StatusBadRequest)
+        return
+    }
+    fmt.Println("Updating ID:", id)
+    w.Header().Set("Content-Type", "application/json")
+    json.NewEncoder(w).Encode(user)
+}
+```
+
+### PATCH Partial Update
+Implementation is similar to `updateUser` but only modifies provided fields.
+
+### DELETE (`DELETE /users/{id}`)
+```go
+func deleteUser(w http.ResponseWriter, r *http.Request) {
+    id := chi.URLParam(r, "id")
+    fmt.Println("Deleting ID:", id)
+    w.WriteHeader(http.StatusNoContent)
+}
+```
+
+---
+
+## Request Lifecycle Diagram
+```
+HTTP Request → Router → Handler → Service → Database → Service → Handler → JSON Response
+```
+
+---
+
+## Testing REST APIs
+Use any HTTP client:
+- **Postman / Insomnia**
+- `curl`
+- VS Code **REST Client** extension
+
+Examples:
+```bash
+curl http://localhost:8080/users
+curl -X POST http://localhost:8080/users \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Dilip","email":"dilip@example.com"}'
+curl http://localhost:8080/users/1
+curl -X DELETE http://localhost:8080/users/1
+```
+
+---
+
+## Go vs Express.js Mapping
+| Express.js | Go (net/http) | chi |
+|------------|---------------|-----|
+| `express()` | built‑in server/router | `chi.NewRouter()` |
+| `app.get()` | `r.Get()` | `chi.Get()` |
+| `app.post()` | `r.Post()` | `chi.Post()` |
+| `req.params.id` | `chi.URLParam(r, "id")` |
+| `req.body` | `json.NewDecoder(r.Body).Decode(&obj)` |
+| `res.json()` | `json.NewEncoder(w).Encode(obj)` |
+| `res.status(201)` | `w.WriteHeader(http.StatusCreated)` |
+| Middleware | `func(next http.Handler) http.Handler` | `chi.Use(middleware)` |
+
+---
+
+> **Note:** This module does not yet connect to a database; that will be covered in Module 9.

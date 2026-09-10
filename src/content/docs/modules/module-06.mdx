@@ -1,0 +1,272 @@
+---
+title: "Module 6: Control Flow Keywords & File I/O"
+description: "defer keyword and file I/O in Go, with Node.js comparisons."
+---
+
+## defer Keyword
+
+`defer` schedules a function call to run **just before** the surrounding function returns.
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    defer fmt.Println("End")
+    fmt.Println("Start")
+}
+```
+
+**Output**
+```
+Start
+End
+```
+
+### Why `defer` is Useful
+
+The most common use‑case is resource cleanup – e.g., closing a file, unlocking a mutex, or returning a logger.
+
+```go
+file, err := os.Open("data.txt")
+if err != nil { return }
+defer file.Close() // guaranteed even on early returns
+```
+
+### LIFO Execution Order
+
+If several `defer` statements are registered, they run in **last‑in‑first‑out** order.
+
+```go
+func main() {
+    defer fmt.Println("First")
+    defer fmt.Println("Second")
+    defer fmt.Println("Third")
+    fmt.Println("Main")
+}
+```
+
+**Output**
+```
+Main
+Third
+Second
+First
+```
+
+### Argument Evaluation
+
+The arguments to a deferred call are evaluated **when the defer statement is executed**, not when the function finally runs.
+
+```go
+func main() {
+    x := 10
+    defer fmt.Println(x) // x evaluated now → 10
+    x = 20
+}
+```
+
+### Closures & `defer`
+
+If you defer a closure, the closure captures the variable itself, so the value is read at execution time.
+
+```go
+func main() {
+    x := 10
+    defer func() { fmt.Println(x) }() // reads x later → 20
+    x = 20
+}
+```
+
+### Performance Note
+
+`defer` has a small runtime cost. In hot loops it may be worthwhile to inline cleanup, but for most backend code the safety outweighs the overhead.
+
+### `defer` with `panic`
+
+Deferred functions still run when a panic occurs, making them perfect for guaranteed cleanup.
+
+```go
+func test() {
+    defer fmt.Println("Cleanup")
+    panic("boom")
+}
+```
+
+## File I/O in Go
+
+Go separates **OS‑level operations** (`os` package) from **stream abstractions** (`io`). This is analogous to Node.js `fs` for file system work and streams for I/O.
+
+### Opening a File (Read)
+
+```go
+file, err := os.Open("data.txt")
+if err != nil { fmt.Println("Error:", err); return }
+defer file.Close()
+fmt.Println("File opened")
+```
+
+### Reading an Entire File
+
+For small files, `os.ReadFile` is the simplest:
+
+```go
+data, err := os.ReadFile("data.txt")
+if err != nil { fmt.Println(err); return }
+fmt.Println(string(data))
+```
+
+`ReadFile` returns a `[]byte`; convert to `string` for printing.
+
+### Writing an Entire File
+
+```go
+content := []byte("Hello Go!")
+err := os.WriteFile("out.txt", content, 0644) // rw‑r‑‑r‑‑
+if err != nil { fmt.Println(err) }
+```
+
+Permissions are expressed in octal:
+
+- `0644` → owner read/write, group/others read
+- `0600` → owner only
+- `0755` → executable bits for owner and read/execute for others
+
+### Creating a File for Streaming Writes
+
+`os.Create` opens (or truncates) a file and returns a writable handle.
+
+```go
+f, err := os.Create("log.txt")
+if err != nil { fmt.Println(err); return }
+defer f.Close()
+_, err = f.WriteString("Start of log\n")
+```
+
+### Writing with `Write`
+
+`Write` returns the number of bytes written and an error.
+
+```go
+data := []byte("bytes")
+n, err := f.Write(data)
+fmt.Printf("%d bytes written\n", n)
+```
+
+### Opening a File with Flags (`os.OpenFile`)
+
+`os.OpenFile` gives fine‑grained control using flag constants.
+
+```go
+f, err := os.OpenFile(
+    "data.txt",
+    os.O_CREATE|os.O_WRONLY|os.O_APPEND,
+    0644,
+)
+if err != nil { fmt.Println(err); return }
+defer f.Close()
+f.WriteString("New line\n")
+```
+
+| Flag | Meaning |
+|------|---------|
+| `os.O_RDONLY` | read only |
+| `os.O_WRONLY` | write only |
+| `os.O_RDWR`   | read + write |
+| `os.O_CREATE` | create if missing |
+| `os.O_APPEND` | append to end |
+| `os.O_TRUNC`  | truncate file |
+
+Combine flags with the bitwise **OR** (`|`).
+
+### `io.Reader` and `io.Writer`
+
+Both are interfaces; any type that implements the method signatures can be used.
+
+```go
+type Reader interface { Read(p []byte) (n int, err error) }
+type Writer interface { Write(p []byte) (n int, err error) }
+```
+
+Common implementers:
+- `*os.File`
+- `bytes.Buffer`
+- `net.Conn`
+- HTTP response bodies (`*http.Response.Body`)
+
+#### Reading via `io.ReadAll`
+
+```go
+data, err := io.ReadAll(file)
+if err != nil { fmt.Println(err); return }
+fmt.Println(string(data))
+```
+
+#### Copying Streams with `io.Copy`
+
+Ideal for large files or network streams – data is transferred in chunks, avoiding full buffering.
+
+```go
+src, _ := os.Open("large.bin")
+defer src.Close()
+ dst, _ := os.Create("copy.bin")
+ defer dst.Close()
+_, err := io.Copy(dst, src)
+if err != nil { fmt.Println(err) }
+```
+
+### File Metadata (`os.Stat`)
+
+```go
+info, err := os.Stat("data.txt")
+if err != nil { fmt.Println(err); return }
+fmt.Println("Name:", info.Name())
+fmt.Println("Size:", info.Size())
+fmt.Println("IsDir:", info.IsDir())
+```
+
+### Creating Directories
+
+```go
+err := os.Mkdir("uploads", 0755)
+// or nested:
+err = os.MkdirAll("uploads/images/profile", 0755)
+```
+
+### Comparison to Node.js (`fs`)
+
+| Go (`os`/`io`) | Node.js (`fs`) |
+|----------------|----------------|
+| `os.Open`                 | `fs.openSync` / `fs.createReadStream` |
+| `os.ReadFile`             | `fs.readFileSync` |
+| `os.WriteFile`            | `fs.writeFileSync` |
+| `os.Create` / `os.OpenFile` | `fs.openSync` with flags |
+| `io.Copy` (stream pipe)   | `stream.pipe` |
+| `defer file.Close()`      | `finally { fd.close() }` |
+
+## Practical Backend Example
+
+```go
+func saveUserProfile(u User, data []byte) error {
+    // Ensure the uploads directory exists
+    if err := os.MkdirAll("uploads/profiles", 0755); err != nil { return err }
+
+    // Open (or create) the user's file
+    f, err := os.OpenFile(
+        fmt.Sprintf("uploads/profiles/%d.json", u.ID),
+        os.O_CREATE|os.O_WRONLY|os.O_TRUNC,
+        0644,
+    )
+    if err != nil { return err }
+    defer f.Close()
+
+    // Write the JSON payload
+    _, err = f.Write(data)
+    return err
+}
+```
+
+The `defer f.Close()` guarantees the file handle is released even if `Write` fails.
+
+---

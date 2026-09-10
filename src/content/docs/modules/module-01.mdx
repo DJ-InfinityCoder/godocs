@@ -1,0 +1,388 @@
+---
+title: "Module 1: Getting Started"
+description: "Introduction to Go, core philosophy, backend comparison with Node.js, compilation, toolchain, and first program."
+---
+
+## What is Go?
+
+**Go (Golang)** is a statically typed, compiled programming language created at Google.
+
+It is particularly popular for:
+- **Backend APIs**
+- **Microservices**
+- **Cloud applications**
+- **Networking**
+- **Distributed systems**
+- **DevOps tools**
+- **High-performance servers**
+
+Go focuses on:
+> **Simplicity + Performance + Concurrency**
+
+For someone coming from Node.js, Go is especially useful because it is excellent for building backend services.
+
+---
+
+## Why Go for Backend?
+
+Consider a standard Node.js server:
+
+```javascript
+const express = require("express");
+
+const app = express();
+
+app.get("/users", (req, res) => {
+    res.json({ message: "Hello" });
+});
+
+app.listen(3000);
+```
+
+Go can provide similar backend functionality with very little code using only the standard library:
+
+```go
+package main
+
+import (
+    "fmt"
+    "net/http"
+)
+
+func handler(w http.ResponseWriter, r *http.Request) {
+    fmt.Fprintln(w, "Hello")
+}
+
+func main() {
+    http.HandleFunc("/users", handler)
+    http.ListenAndServe(":3000", nil)
+}
+```
+
+Go is popular in backend systems because:
+- **Compiled** → fast execution
+- **Goroutines** → lightweight concurrency
+- **Strong type system** → catches many errors early
+- **Built-in HTTP server**
+- **Excellent standard library**
+- **Easy deployment** → usually a single binary
+- **Small Docker images** are possible
+- **Good tooling** built directly into the language
+
+---
+
+## Go vs Node.js
+
+| Feature | Node.js | Go |
+| :--- | :--- | :--- |
+| **Language** | JavaScript | Go |
+| **Type system** | Dynamic | Static |
+| **Execution** | JIT runtime | Compiled binary |
+| **Concurrency** | Event loop + async | Goroutines |
+| **Package manager** | npm | Go modules |
+| **Backend framework** | Express, Fastify | `net/http`, chi, Gin, etc. |
+| **Error handling** | try/catch, promises | Explicit error return |
+| **Deployment** | Node runtime required | Standalone binary |
+| **Performance** | Very good | Usually excellent |
+| **Memory** | Garbage Collected | Garbage Collected |
+
+> [!NOTE]
+> Don't think of Go as "Node.js but faster." The programming model is fundamentally different:
+> 
+> `static typing` → `structs` → `interfaces` → `explicit errors` → `goroutines` → `channels`
+
+---
+
+## Compiled vs Interpreted
+
+Go is a **compiled language**. When you write Go code, you do not execute the source code directly via an interpreter:
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello Go")
+}
+```
+
+### Go Compilation Flow
+
+```text
+Go source code
+      ↓
+   Compiler
+      ↓
+ Machine code
+      ↓
+ Executable binary
+```
+
+For example:
+```text
+main.go ──[ go build ]──> main.exe (Windows) / main (Linux/macOS)
+```
+
+Node.js works differently:
+```text
+JavaScript ──> Node.js runtime ──> V8 engine ──> Execution
+```
+
+### Why Compilation Matters
+
+Suppose you have:
+
+```go
+x := 10
+x = "hello"
+```
+
+Go will detect this type mismatch immediately during compilation.
+
+JavaScript allows this because variables can change types dynamically:
+
+```javascript
+let x = 10;
+x = "hello";
+```
+
+Go's strict typing catches many mistakes before your program ever runs in production.
+
+---
+
+## Installing Go
+
+1. Download and install Go from the official portal: [go.dev](https://go.dev)
+2. Verify your installation in the terminal:
+
+```bash
+go version
+```
+
+Example output:
+```text
+go version go1.25.0 windows/amd64
+```
+
+---
+
+## Go Toolchain
+
+Go comes with powerful, built-in CLI commands:
+
+- `go run`
+- `go build`
+- `go test`
+- `go mod`
+- `go fmt`
+- `go get`
+- `go install`
+
+### Go vs Node.js Tooling Equivalent
+
+| Go Command | Node.js Equivalent | Description |
+| :--- | :--- | :--- |
+| `go run` | `node app.js` | Run code directly in dev |
+| `go build` | build / bundle | Compile to executable |
+| `go test` | test runner | Run unit & benchmark tests |
+| `go mod` | npm / package management | Module dependency management |
+| `go get` | `npm install` | Download external packages |
+| `go fmt` | Prettier / linter | Standardized code formatter |
+
+One major advantage in Go is that formatting is standardized across the entire ecosystem via `go fmt`.
+
+---
+
+## Hello World
+
+Create a project directory and a file named `main.go`:
+
+```text
+hello/
+└── main.go
+```
+
+In `main.go`:
+
+```go
+package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello, World!")
+}
+```
+
+Run it directly:
+
+```bash
+go run main.go
+```
+
+Output:
+```text
+Hello, World!
+```
+
+---
+
+## Understanding the Code
+
+### 1. `package main`
+Every Go source file belongs to a package. `main` is special: a program that produces an executable binary must declare `package main`.
+
+### 2. `import "fmt"`
+Imports the standard formatted I/O package. Similar conceptually to:
+```javascript
+const express = require("express");
+// or
+import express from "express";
+```
+
+### 3. `func main()`
+The main entry point of the executable. Execution starts here.
+
+---
+
+## Go Functions
+
+Go uses the `func` keyword:
+
+```go
+func functionName() {
+}
+```
+
+Example:
+
+```go
+package main
+
+import "fmt"
+
+func greet() {
+    fmt.Println("Hello")
+}
+
+func main() {
+    greet()
+}
+```
+
+---
+
+## Go Modules
+
+Modern Go projects use **Go Modules**. You do not need to manually manage `GOPATH` for application development.
+
+### Initializing a Module
+
+```bash
+mkdir myapp
+cd myapp
+go mod init myapp
+```
+
+This creates a `go.mod` file in your directory:
+
+```text
+module myapp
+
+go 1.25
+```
+
+If hosted on GitHub, you commonly use:
+```text
+module github.com/DJ-InfinityCoder/myapp
+```
+
+### What is `go.mod`?
+
+`go.mod` describes your Go module and its dependencies:
+
+| Node.js | Go |
+| :--- | :--- |
+| `package.json` | `go.mod` |
+| `package-lock.json` | `go.sum` |
+| `npm install` | `go get` |
+| `node_modules` | Go module cache |
+
+Example `go.mod` with an external package:
+
+```text
+module myapp
+
+go 1.25
+
+require github.com/go-chi/chi/v5 v5.2.3
+```
+
+---
+
+## `GOPATH` vs Go Modules
+
+- **Older Go development**: Heavily relied on global `GOPATH`.
+- **Modern Go development**: Primarily uses **Go Modules** (`go.mod`).
+
+You do not need to memorize the legacy `GOPATH` workflow for modern backend development.
+
+---
+
+## `go run` vs `go build`
+
+### `go run`
+```bash
+go run main.go
+```
+Convenient for rapid local development. It compiles and runs the program in memory.
+
+### `go build`
+```bash
+go build
+```
+Compiles a standalone binary artifact (`myapp.exe` on Windows, `./myapp` on Linux/macOS) ready for production deployment.
+
+---
+
+## Go Documentation & Playground
+
+### CLI Documentation (`go doc`)
+Go has built-in offline documentation:
+
+```bash
+go doc fmt.Println
+```
+Inspect an entire package:
+```bash
+go doc fmt
+```
+
+### Official Links
+- [Official Go Documentation](https://go.dev/doc/)
+- [Go Playground](https://go.dev/play/) — Experiment with Go directly in your browser without installing anything.
+
+---
+
+## Module 1 — Key Takeaways
+
+```text
+Go
+ ↓
+Compiled + Statically Typed Language
+ ↓
+Excellent for Backend / Cloud Systems
+ ↓
+package main
+ ↓
+func main()
+ ↓
+go.mod manages modern projects
+ ↓
+go run   → run program
+go build → create executable
+go test  → run tests
+go fmt   → format code
+go get   → add dependencies
+```

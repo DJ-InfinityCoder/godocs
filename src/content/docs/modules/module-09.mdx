@@ -1,0 +1,379 @@
+---
+title: "Module 9: Database Integration — MongoDB & SQL"
+description: "Connecting Go back‑ends to MongoDB and PostgreSQL, repository pattern, CRUD operations, soft deletes, connection pooling."
+---
+
+## Overview
+
+In **Module 8** we built routes and controllers, but data lived only in memory. In this module we integrate real databases – **MongoDB** (NoSQL) and **PostgreSQL** (SQL) – using Go’s standard drivers and best‑practice architecture.
+
+```
+Client
+   ↓
+Router
+   ↓
+Handler / Controller
+   ↓
+Service
+   ↓
+Database
+   ↓
+Response
+```
+
+---
+
+## MongoDB Integration (MongoDB Go Driver)
+
+### Install Driver
+```bash
+go get go.mongodb.org/mongo-driver/v2
+```
+
+### Connect to MongoDB
+```go
+import (
+    "context"
+    "fmt"
+    "time"
+
+    "go.mongodb.org/mongo-driver/v2/mongo"
+    "go.mongodb.org/mongo-driver/v2/mongo/options"
+)
+
+func connectMongo() (*mongo.Client, error) {
+    uri := "mongodb://localhost:27017"
+    client, err := mongo.Connect(options.Client().ApplyURI(uri))
+    if err != nil { return nil, err }
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    if err := client.Ping(ctx, nil); err != nil { return nil, err }
+    fmt.Println("MongoDB connected")
+    return client, nil
+}
+```
+**Production tip:** Create the client once at application start and reuse it for all requests – do **not** reconnect per request.
+
+### Data Model (Struct with BSON tags)
+```go
+type User struct {
+    ID        string    `bson:"_id,omitempty"`
+    Name      string    `bson:"name"`
+    Email     string    `bson:"email"`
+    Age       int       `bson:"age"`
+    DeletedAt *time.Time `bson:"deleted_at,omitempty"`
+}
+```
+`omitempty` omits empty fields on insert, allowing MongoDB to generate an `_id`.
+
+### CRUD Operations
+#### Insert One
+```go
+func createUser(col *mongo.Collection, user User) error {
+    ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+    defer cancel()
+    _, err := col.InsertOne(ctx, user)
+    return err
+}
+```
+#### Insert Many
+```go
+users := []any{
+    User{Name: "Dilip", Email: "dilip@example.com", Age: 21},
+    User{Name: "Rahul", Email: "rahul@example.com", Age: 22},
+    User{Name: "Aman", Email: "aman@example.com", Age: 23},
+}
+result, err := col.InsertMany(context.Background(), users)
+```
+#### Find One
+```go
+func getUserByEmail(col *mongo.Collection, email string) (*User, error) {
+    var user User
+    filter := bson.M{"email": email}
+    err := col.FindOne(context.Background(), filter).Decode(&user)
+    if err != nil { return nil, err }
+    return &user, nil
+}
+```
+#### Find All (optional filter)
+```go
+cursor, err := col.Find(context.Background(), bson.M{})
+if err != nil { return nil, err }
+var users []User
+if err := cursor.All(context.Background(), &users); err != nil { return nil, err }
+```
+#### Update One
+```go
+filter := bson.M{"email": "dilip@example.com"}
+update := bson.M{"$set": bson.M{"age": 22}}
+_, err := col.UpdateOne(context.Background(), filter, update)
+```
+#### Update Many
+```go
+filter := bson.M{"age": 21}
+update := bson.M{"$set": bson.M{"verified": true}}
+_, err := col.UpdateMany(context.Background(), filter, update)
+```
+#### Hard Delete
+```go
+filter := bson.M{"email": "dilip@example.com"}
+_, err := col.DeleteOne(context.Background(), filter)
+```
+#### Soft Delete (timestamp)
+```go
+now := time.Now()
+filter := bson.M{"_id": id}
+update := bson.M{"$set": bson.M{"deleted_at": now}}
+_, err := col.UpdateOne(context.Background(), filter, update)
+```
+When reading active users, filter out soft‑deleted docs:
+```go
+filter := bson.M{"deleted_at": bson.M{"$exists": false}}
+```
+---
+
+## PostgreSQL Integration (`database/sql` + `pgx` driver)
+
+### Install Driver
+```bash
+go get github.com/jackc/pgx/v5/stdlib
+```
+
+### Connect & Ping
+```go
+import (
+    "context"
+    "database/sql"
+    "fmt"
+)
+
+func connectPostgres() (*sql.DB, error) {
+    dsn := "postgres://user:password@localhost:5432/mydb"
+    db, err := sql.Open("pgx", dsn)
+    if err != nil { return nil, err }
+    if err := db.PingContext(context.Background()); err != nil { return nil, err }
+    fmt.Println("PostgreSQL connected")
+    return db, nil
+}
+```
+`sql.Open` returns a **connection pool**, not a single connection.
+
+### Connection Pool Settings (production)
+```go
+db.SetMaxOpenConns(20)   // max simultaneous connections
+ db.SetMaxIdleConns(10)   // idle connections kept ready
+ db.SetConnMaxLifetime(30 * time.Minute)
+```
+---
+
+### Data Model (SQL struct)
+```go
+type User struct {
+    ID        int
+    Name      string
+    Email     string
+    Age       int
+    DeletedAt sql.NullTime // for soft delete
+}
+```
+---
+
+### CRUD Operations
+#### Insert (ExecContext) – returning the new ID
+```go
+query := `INSERT INTO users (name,email,age) VALUES ($1,$2,$3) RETURNING id`
+var id int
+err := db.QueryRowContext(ctx, query, "Dilip", "dilip@example.com", 21).Scan(&id)
+```
+#### Insert Many – use a transaction or bulk copy (omitted for brevity).
+#### Select One (QueryRowContext)
+```go
+var user User
+query := `SELECT id, name, email, age FROM users WHERE email = $1`
+err := db.QueryRowContext(ctx, query, email).Scan(&user.ID, &user.Name, &user.Email, &user.Age)
+```
+#### Select Multiple (QueryContext)
+```go
+rows, err := db.QueryContext(ctx, "SELECT id, name, email FROM users WHERE deleted_at IS NULL")
+defer rows.Close()
+for rows.Next() {
+    var u User
+    if err := rows.Scan(&u.ID, &u.Name, &u.Email); err != nil { return err }
+    fmt.Println(u)
+}
+```
+#### Update (ExecContext)
+```go
+query := `UPDATE users SET age = $1 WHERE id = $2`
+_, err := db.ExecContext(ctx, query, 22, userID)
+```
+#### Soft Delete
+```go
+query := `UPDATE users SET deleted_at = NOW() WHERE id = $1`
+_, err := db.ExecContext(ctx, query, userID)
+```
+When fetching active rows, add `WHERE deleted_at IS NULL`.
+#### Hard Delete
+```go
+query := `DELETE FROM users WHERE id = $1`
+_, err := db.ExecContext(ctx, query, userID)
+```
+---
+
+## Unified CRUD Summary
+| Operation | MongoDB | PostgreSQL |
+|-----------|---------|------------|
+| Insert One | `InsertOne()` | `INSERT … RETURNING id` |
+| Insert Many | `InsertMany()` | batch `INSERT` or transaction |
+| Find One | `FindOne()` | `QueryRowContext()` |
+| Find Many | `Find()` (cursor) | `QueryContext()` |
+| Update One | `UpdateOne()` | `UPDATE …` (ExecContext) |
+| Update Many | `UpdateMany()` | `UPDATE …` (ExecContext) |
+| Delete One (hard) | `DeleteOne()` | `DELETE …` |
+| Delete Many (hard) | `DeleteMany()` | multiple `DELETE` statements |
+| Soft Delete | `UpdateOne` + `deleted_at` | `UPDATE … SET deleted_at = NOW()` |
+
+---
+
+## Recommended Project Layout (Clean Architecture)
+```
+my-api/
+│   go.mod
+│   go.sum
+│
+├── cmd/
+│   └── server/
+│       └── main.go        # entry point, router setup
+│
+├── internal/
+│   ├── models/
+│   │   └── user.go        # struct definitions, BSON/SQL tags
+│   ├── repository/
+│   │   └── user_repo.go   # DB‑specific CRUD (Mongo & SQL)
+│   ├── service/
+│   │   └── user_service.go# business logic, validation
+│   └── handlers/
+│       └── user_handler.go# HTTP handlers (chi routes)
+│
+└── pkg/
+    └── ...               # reusable utilities (logger, config)
+```
+**Why this layout?**
+- `cmd` contains the minimal bootstrapping code.
+- `internal` keeps application‑specific code private.
+- `repository` isolates data‑access logic for each database.
+- `service` implements business rules independent of transport.
+- `handlers` translate HTTP requests into service calls.
+
+---
+
+## Mini Example: Full Flow (MongoDB)
+```go
+package main
+
+import (
+    "context"
+    "fmt"
+    "time"
+
+    "go.mongodb.org/mongo-driver/v2/bson"
+    "go.mongodb.org/mongo-driver/v2/mongo"
+    "go.mongodb.org/mongo-driver/v2/mongo/options"
+)
+
+type User struct {
+    ID    string `bson:"_id,omitempty"`
+    Name  string `bson:"name"`
+    Email string `bson:"email"`
+    Age   int    `bson:"age"`
+}
+
+func main() {
+    // --- start up ---
+    client, _ := mongo.Connect(options.Client().ApplyURI("mongodb://localhost:27017"))
+    defer client.Disconnect(context.Background())
+    col := client.Database("myapp").Collection("users")
+
+    // Create
+    u := User{Name: "Dilip", Email: "dilip@example.com", Age: 21}
+    if _, err := col.InsertOne(context.Background(), u); err != nil { panic(err) }
+    fmt.Println("user inserted")
+
+    // Read
+    var found User
+    if err := col.FindOne(context.Background(), bson.M{"email": u.Email}).Decode(&found); err != nil { panic(err) }
+    fmt.Printf("found: %+v\n", found)
+
+    // Update
+    _, err := col.UpdateOne(context.Background(), bson.M{"email": u.Email}, bson.M{"$set": bson.M{"age": 22}})
+    if err != nil { panic(err) }
+    fmt.Println("age updated")
+
+    // Soft delete
+    now := time.Now()
+    _, _ = col.UpdateOne(context.Background(), bson.M{"email": u.Email}, bson.M{"$set": bson.M{"deleted_at": now}})
+    fmt.Println("soft‑deleted")
+}
+```
+---
+
+## Mini Example: Full Flow (PostgreSQL)
+```go
+package main
+
+import (
+    "context"
+    "database/sql"
+    "fmt"
+    "time"
+    _ "github.com/jackc/pgx/v5/stdlib"
+)
+
+type User struct {
+    ID    int
+    Name  string
+    Email string
+    Age   int
+}
+
+func main() {
+    db, _ := sql.Open("pgx", "postgres://user:password@localhost:5432/mydb")
+    defer db.Close()
+    ctx := context.Background()
+    // connection pool tuning
+    db.SetMaxOpenConns(20)
+    db.SetMaxIdleConns(10)
+    db.SetConnMaxLifetime(30 * time.Minute)
+
+    // Create
+    var id int
+    err := db.QueryRowContext(ctx, `INSERT INTO users (name,email,age) VALUES ($1,$2,$3) RETURNING id`, "Dilip", "dilip@example.com", 21).Scan(&id)
+    if err != nil { panic(err) }
+    fmt.Println("inserted id", id)
+
+    // Read one
+    var u User
+    err = db.QueryRowContext(ctx, `SELECT id,name,email,age FROM users WHERE id=$1`, id).Scan(&u.ID, &u.Name, &u.Email, &u.Age)
+    if err != nil { panic(err) }
+    fmt.Printf("found: %+v\n", u)
+
+    // Update
+    _, err = db.ExecContext(ctx, `UPDATE users SET age=$1 WHERE id=$2`, 22, id)
+    if err != nil { panic(err) }
+    fmt.Println("age updated")
+
+    // Soft delete
+    _, _ = db.ExecContext(ctx, `UPDATE users SET deleted_at = NOW() WHERE id=$1`, id)
+    fmt.Println("soft‑deleted")
+}
+```
+---
+
+## Testing Database Code
+- **Unit tests**: mock repository interfaces (e.g., with `testify/mock`).
+- **Integration tests**: spin up temporary Docker containers for MongoDB/PostgreSQL, run real queries, then teardown.
+- **Table‑driven tests** for each CRUD method.
+
+---
+
+> **Note:** This module focuses on the data‑access layer and proper layering. The next module (Module 10) will cover Goroutine‑based concurrency and request handling patterns.

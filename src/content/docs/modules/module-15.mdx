@@ -1,0 +1,357 @@
+---
+title: "Module 15: Idiomatic Error Handling & Testing"
+description: "Learn Go's explicit error handling, testing patterns, mocking, benchmarking and profiling for production-ready backend services."
+---
+
+## Overview
+
+Error handling, testing, mocking, benchmarking and profiling are the five pillars of a robust Go backend. This module walks through each pillar, shows idiomatic Go code, and connects the concepts to familiar Node.js/TypeScript practices.
+
+---
+
+## 1. Explicit Error Handling
+
+Go prefers **returning errors** instead of exceptions.
+
+```go
+func readFile(path string) ([]byte, error) {
+    data, err := os.ReadFile(path)
+    if err != nil {
+        return nil, err // propagate the error upward
+    }
+    return data, nil
+}
+```
+
+### Why Explicit Errors?
+- The call‑site sees every possible failure point.
+- No hidden control‑flow like `try/catch`.
+- Works well with Go’s lightweight concurrency.
+
+---
+
+## 2. Creating Errors
+
+### `errors.New`
+```go
+var ErrUserNotFound = errors.New("user not found")
+
+func getUser(id int) error {
+    if id <= 0 {
+        return ErrUserNotFound
+    }
+    return nil
+}
+```
+
+### `fmt.Errorf`
+Use when you need dynamic context.
+```go
+func divide(a, b int) (int, error) {
+    if b == 0 {
+        return 0, fmt.Errorf("cannot divide %d by zero", a)
+    }
+    return a / b, nil
+}
+```
+
+---
+
+## 3. Error Wrapping (`%w`)
+
+Preserve the original error while adding context.
+```go
+func fetchUser(id int) (User, error) {
+    u, err := db.Query(id)
+    if err != nil {
+        return User{}, fmt.Errorf("fetch user %d: %w", id, err)
+    }
+    return u, nil
+}
+```
+
+### Checking Wrapped Errors
+```go
+if errors.Is(err, sql.ErrNoRows) {
+    // handle not‑found case
+}
+```
+
+### Extracting Types with `errors.As`
+```go
+type ValidationError struct{ Field string }
+func (e ValidationError) Error() string { return e.Field + " invalid" }
+
+var ve ValidationError
+if errors.As(err, &ve) {
+    fmt.Println("invalid field:", ve.Field)
+}
+```
+
+---
+
+## 4. Panic & Recover
+
+Use `panic` only for unrecoverable states (bugs, init failures).
+```go
+func mustLoadConfig() Config {
+    cfg, err := loadConfig()
+    if err != nil {
+        panic(err) // program cannot continue safely
+    }
+    return cfg
+}
+```
+
+Recover inside a deferred function to turn a panic into a regular error.
+```go
+func safeCall() (err error) {
+    defer func() {
+        if r := recover(); r != nil {
+            err = fmt.Errorf("recovered panic: %v", r)
+        }
+    }()
+    // code that might panic
+    return nil
+}
+```
+
+---
+
+## 5. Unit Testing (package `testing`)
+
+### Basic Test
+```go
+func Add(a, b int) int { return a + b }
+
+func TestAdd(t *testing.T) {
+    got := Add(2, 3)
+    if got != 5 {
+        t.Errorf("expected 5, got %d", got)
+    }
+}
+```
+
+Run with `go test` or `go test ./...`.
+
+### Table‑Driven Tests (idiomatic pattern)
+```go
+func TestAdd(t *testing.T) {
+    cases := []struct {
+        name string
+        a, b int
+        want int
+    }{{"pos", 2, 3, 5}, {"zero", 0, 5, 5}, {"neg", -2, 3, 1}}
+    for _, tc := range cases {
+        t.Run(tc.name, func(t *testing.T) {
+            if got := Add(tc.a, tc.b); got != tc.want {
+                t.Errorf("got %d, want %d", got, tc.want)
+            }
+        })
+    }
+}
+```
+
+### `t.Errorf` vs `t.Fatalf`
+- `Errorf` records a failure and continues.
+‑ `Fatalf` aborts the current test immediately.
+
+---
+
+## 6. Testing Errors
+```go
+var ErrInvalidAge = errors.New("invalid age")
+
+func ValidateAge(age int) error {
+    if age < 18 { return ErrInvalidAge }
+    return nil
+}
+
+func TestValidateAge(t *testing.T) {
+    if err := ValidateAge(15); !errors.Is(err, ErrInvalidAge) {
+        t.Errorf("expected ErrInvalidAge")
+    }
+}
+```
+
+---
+
+## 7. Mocking Interfaces
+
+Interfaces defined in Module 14 become test seams.
+```go
+type UserRepository interface { GetUser(id int) (string, error) }
+
+type FakeRepo struct{}
+func (FakeRepo) GetUser(id int) (string, error) { return "Test User", nil }
+
+func TestUserService(t *testing.T) {
+    svc := NewUserService(FakeRepo{})
+    if u, err := svc.GetUser(1); err != nil || u != "Test User" {
+        t.Fatalf("unexpected result: %v, %v", u, err)
+    }
+}
+```
+
+**Fakes vs. Mocks**
+- *Fake*: lightweight, functional stub.
+- *Mock*: can record call counts, arguments (often built with libraries like `gomock`).
+
+---
+
+## 8. Testing HTTP Handlers (`net/http/httptest`)
+```go
+func TestHealthHandler(t *testing.T) {
+    req := httptest.NewRequest(http.MethodGet, "/health", nil)
+    rec := httptest.NewRecorder()
+    handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        w.Write([]byte("OK"))
+    })
+    handler.ServeHTTP(rec, req)
+    if rec.Code != http.StatusOK {
+        t.Errorf("expected 200, got %d", rec.Code)
+    }
+}
+```
+
+No real server is started – the request/response are in‑memory.
+
+---
+
+## 9. Benchmarking (`testing.B`)
+```go
+func BenchmarkAdd(b *testing.B) {
+    for i := 0; i < b.N; i++ {
+        Add(10, 20)
+    }
+}
+```
+Run with `go test -bench=.`. The framework decides `b.N` automatically.
+
+### Interpreting Output
+```
+BenchmarkAdd-8    1000000000    0.3 ns/op    0 B/op    0 allocs/op
+```
+- **ns/op** – time per operation.
+- **B/op** – bytes allocated.
+- **allocs/op** – number of allocations.
+
+---
+
+## 10. Profiling with `pprof`
+
+### CPU Profile
+```bash
+go test -run=^$ -bench=BenchmarkAdd -benchmem -cpuprofile=cpu.out
+go tool pprof cpu.out
+```
+
+### Memory (Heap) Profile
+```bash
+go test -run=^$ -bench=BenchmarkAdd -memprofile=mem.out
+go tool pprof mem.out
+```
+
+### HTTP Server Profiling
+Add the import (blank) to register handlers:
+```go
+import _ "net/http/pprof"
+```
+Endpoints such as `/debug/pprof/profile` become available.
+
+> **Security tip:** protect these endpoints in production (e.g., basic auth or firewall).
+
+---
+
+## 11. Race Detector
+
+Run tests with `-race` to catch data races:
+```bash
+go test -race ./...
+```
+The detector reports unsynchronized concurrent accesses.
+
+---
+
+## 12. Idiomatic Error‑Handling Rules (Cheat‑Sheet)
+
+- **Return** errors explicitly.
+- **Check** errors immediately after the call.
+- **Wrap** with context using `%w`.
+- **Use** `errors.Is` for sentinel errors.
+- **Use** `errors.As` for custom error types.
+- **Avoid** `panic` for expected failures.
+- **Reserve** `panic` for programmer bugs or fatal init errors.
+- **Recover** only at program boundaries (e.g., HTTP middleware).
+
+---
+
+## 13. Complete Mini Example
+```go
+package main
+
+import (
+    "errors"
+    "fmt"
+)
+
+var ErrUserNotFound = errors.New("user not found")
+
+type UserRepository interface {
+    GetUser(id int) (string, error)
+}
+
+type FakeRepository struct{}
+func (FakeRepository) GetUser(id int) (string, error) {
+    if id == 0 {
+        return "", ErrUserNotFound
+    }
+    return "Dilip", nil
+}
+
+type UserService struct { repo UserRepository }
+func NewUserService(r UserRepository) *UserService { return &UserService{repo: r} }
+func (s *UserService) GetUser(id int) (string, error) {
+    u, err := s.repo.GetUser(id)
+    if err != nil {
+        return "", fmt.Errorf("get user: %w", err)
+    }
+    return u, nil
+}
+
+func main() {
+    svc := NewUserService(FakeRepository{})
+    user, err := svc.GetUser(0)
+    if errors.Is(err, ErrUserNotFound) {
+        fmt.Println("User not found")
+        return
+    }
+    if err != nil {
+        fmt.Println("Error:", err)
+        return
+    }
+    fmt.Println(user)
+}
+```
+The example demonstrates:
+- Interfaces + DI
+- Explicit error returns
+- `%w` wrapping
+- `errors.Is` inspection
+- A fake repository for testing.
+
+---
+
+## 14. TL;DR
+
+| Concept | Go idiom | JS/TS analogue |
+|---------|----------|----------------|
+| Errors  | `result, err := fn()` | `try/catch` |
+| Wrapping | `fmt.Errorf("msg: %w", err)` | Custom `Error` subclasses |
+| Testing | `*_test.go` with `testing` | Jest/Mocha |
+| Mocking | Fake structs implementing interfaces | Sinon/Jest mocks |
+| Benchmark | `func BenchmarkX(b *testing.B)` | `benchmark.js` libs |
+| Profiling | `pprof` | Chrome DevTools, Node profiler |
+
+Master these patterns and you’ll write production‑grade Go services that are **reliable, observable and maintainable**.

@@ -1,0 +1,302 @@
+---
+title: "Module 16: Microservices & Modern Backend Standards"
+description: "Learn how to build production‑grade Go microservices using gRPC, Protobuf, middleware, Redis, Docker and modern best practices."
+---
+
+## Overview
+
+This module ties together everything you’ve learned so far and shows how Go is used to build **production‑grade backend systems**. We’ll cover microservice fundamentals, gRPC + Protobuf, middleware patterns, Redis caching, Docker deployment, graceful shutdown, and the architectural decisions you’ll need to discuss in an interview.
+
+---
+
+## 1. Microservices – Splitting a Monolith
+
+A monolith bundles all responsibilities into one binary. A **microservice** isolates a single business capability into its own process, database, and deployment unit.
+
+```text
+Monolith
+└─ Users, Orders, Payments → single DB
+
+Microservices
+┌─ Users Service → users DB
+│   Orders Service → orders DB
+│   Payments Service → payments DB
+└─ API Gateway → route to services
+```
+
+### Why Microservices?
+- **Independent scaling** – spin up more instances of a hot service (e.g., Payments) without touching the others.
+- **Decoupled deployments** – deploy a new version of Orders without restarting Users.
+- **Ownership of data** – each service owns its own schema, reducing cross‑team contention.
+
+> **Caveat:** Microservices add operational complexity (service discovery, monitoring, distributed tracing). For small projects a monolith is often simpler.
+
+---
+
+## 2. Service‑to‑Service Communication
+
+### REST vs gRPC
+| Feature | REST (JSON) | gRPC (Protobuf) |
+|---------|-------------|-----------------|
+| Transport | HTTP/1.1 (or 2) | HTTP/2 |
+| Payload | Human‑readable JSON | Compact binary protobuf |
+| Schema | Implicit, loosely typed | Strongly typed `.proto` files |
+| Codegen | Manual struct ↔️ JSON | Auto‑generated client & server stubs |
+| Performance | Moderate | Low latency, lower bandwidth |
+
+### Protobuf Definition Example
+```proto
+syntax = "proto3";
+
+service PaymentService {
+  rpc ProcessPayment(PaymentRequest) returns (PaymentResponse);
+}
+
+message PaymentRequest {
+  int64 user_id = 1;
+  double amount = 2;
+}
+
+message PaymentResponse {
+  bool success = 1;
+  string transaction_id = 2;
+}
+```
+Running `protoc --go_out=. --go-grpc_out=. payment.proto` generates Go types and a `PaymentServiceServer` interface you implement.
+
+---
+
+## 3. Middleware – Reusable Request Pipelines
+
+Middleware sits between the incoming HTTP request and your handler. It’s a perfect place for logging, authentication, rate‑limiting, request IDs, and panic recovery.
+
+```go
+func logging(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        fmt.Printf("%s %s\n", r.Method, r.URL.Path)
+        next.ServeHTTP(w, r)
+    })
+}
+
+func authJWT(next http.Handler) http.Handler {
+    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        token := r.Header.Get("Authorization")
+        // validate token …
+        if token == "" {
+            http.Error(w, "unauthorized", http.StatusUnauthorized)
+            return
+        }
+        ctx := context.WithValue(r.Context(), "userID", "123")
+        next.ServeHTTP(w, r.WithContext(ctx))
+    })
+}
+```
+Stack them with a router (e.g., chi):
+```go
+r := chi.NewRouter()
+r.Use(logging, authJWT)
+```
+
+### Structured Logging
+Go 1.21+ ships `log/slog` for JSON‑friendly logs:
+```go
+logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+logger.Info("user created", "user_id", 10)
+```
+Third‑party `zap` offers higher performance for high‑throughput services.
+
+---
+
+## 4. Redis – Fast Caching Layer
+
+Redis is an in‑memory datastore used for caching, session storage, rate‑limiting counters, and Pub/Sub.
+
+### Cache‑Aside Pattern
+```go
+func getUser(ctx context.Context, id int) (User, error) {
+    key := fmt.Sprintf("user:%d", id)
+    // 1️⃣ try cache
+    if data, err := rdb.Get(ctx, key).Result(); err == nil {
+        var u User
+        json.Unmarshal([]byte(data), &u)
+        return u, nil
+    }
+    // 2️⃣ cache miss → DB
+    u, err := pg.GetUser(ctx, id)
+    if err != nil {
+        return User{}, err
+    }
+    // 3️⃣ store in cache with TTL
+    b, _ := json.Marshal(u)
+    rdb.Set(ctx, key, b, 5*time.Minute)
+    return u, nil
+}
+```
+When updating a user, invalidate the key:
+```go
+pg.UpdateUser(ctx, u)
+rdb.Del(ctx, fmt.Sprintf("user:%d", u.ID))
+```
+
+### Go Client
+We typically use **go‑redis/v9** which accepts a `context.Context` for cancellation and tracing.
+
+---
+
+## 5. Docker – Packaging & Deploying Go Services
+
+### Multi‑Stage Build (Best Practice)
+```dockerfile
+# ---------- Builder ----------
+FROM golang:1.24 AS builder
+WORKDIR /app
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o server ./cmd/server
+
+# ---------- Runtime ----------
+FROM alpine:latest
+WORKDIR /app
+COPY --from=builder /app/server .
+EXPOSE 8080
+CMD ["./server"]
+```
+The final image contains **only the compiled binary**, resulting in a sub‑MB image that starts instantly.
+
+### Building & Running
+```bash
+docker build -t user-service:latest .
+docker run -p 8080:8080 user-service:latest
+```
+For production you’d push the image to a registry and deploy via Kubernetes, ECS, or Cloud Run.
+
+---
+
+## 6. Graceful Shutdown
+
+A service must stop accepting new traffic, finish in‑flight requests, and release resources before exiting.
+```go
+srv := &http.Server{Addr: ":8080", Handler: router}
+
+go func() {
+    if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+        log.Fatalf("listen: %s", err)
+    }
+}()
+
+quit := make(chan os.Signal, 1)
+signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+<-quit // block until signal
+
+ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+defer cancel()
+if err := srv.Shutdown(ctx); err != nil {
+    log.Fatalf("Server forced to shutdown: %v", err)
+}
+log.Println("Server exiting")
+```
+The `context` ties directly into the **context** package from Module 13.
+
+---
+
+## 7. Putting It All Together – A Minimal Service Blueprint
+```go
+package main
+
+import (
+    "context"
+    "log"
+    "net"
+    "net/http"
+    "os"
+    "os/signal"
+    "syscall"
+    "time"
+
+    "github.com/go-chi/chi/v5"
+    "github.com/go-redis/redis/v9"
+    "google.golang.org/grpc"
+    "google.golang.org/grpc/reflection"
+)
+
+// ----- Redis client -----
+var rdb = redis.NewClient(&redis.Options{Addr: "redis:6379"})
+
+// ----- HTTP handlers (middleware stack) -----
+func getUserHandler(w http.ResponseWriter, r *http.Request) {
+    // placeholder – use cache‑aside logic here
+    w.Write([]byte("user placeholder"))
+}
+
+func main() {
+    // HTTP API
+    r := chi.NewRouter()
+    r.Use(logging, authJWT, rateLimiter)
+    r.Get("/users/{id}", getUserHandler)
+
+    httpSrv := &http.Server{Addr: ":8080", Handler: r}
+    go func() {
+        log.Println("HTTP server listening on :8080")
+        if err := httpSrv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+            log.Fatalf("listen: %v", err)
+        }
+    }()
+
+    // gRPC server (e.g., Payment Service)
+    grpcSrv := grpc.NewServer()
+    // RegisterPaymentServiceServer(grpcSrv, &paymentImpl{})
+    reflection.Register(grpcSrv)
+    go func() {
+        lis, _ := net.Listen("tcp", ":9090")
+        log.Println("gRPC server listening on :9090")
+        if err := grpcSrv.Serve(lis); err != nil {
+            log.Fatalf("gRPC serve: %v", err)
+        }
+    }()
+
+    // Graceful shutdown handling
+    quit := make(chan os.Signal, 1)
+    signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+    <-quit
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    httpSrv.Shutdown(ctx)
+    grpcSrv.GracefulStop()
+    log.Println("Shutdown complete")
+}
+```
+This skeleton illustrates:
+- **HTTP + chi** with middleware
+- **gRPC** for inter‑service RPC
+- **Redis** client ready for cache‑aside logic
+- **Graceful shutdown** wired to OS signals
+- **Docker‑friendly** binary (build with `CGO_ENABLED=0`)
+
+---
+
+## 8. Production Checklist (Interview‑Ready)
+| Area | Key Practices |
+|------|----------------|
+| **API** | net/http + chi, OpenAPI spec, input validation |
+| **Middleware** | structured logging (slog/zap), JWT auth, rate limiting, panic recovery |
+| **Data** | PostgreSQL (sqlx/gorm) + Redis cache‑aside, TTL, cache invalidation |
+| **Communication** | gRPC + Protobuf for internal RPC, REST for public APIs |
+| **Observability** | Prometheus metrics, OpenTelemetry tracing, pprof profiling |
+| **Deployment** | multi‑stage Docker, Kubernetes manifests, health‑check endpoint, liveness/readiness probes |
+| **Reliability** | graceful shutdown, context cancellation, retries with backoff, circuit breaker (optional) |
+| **Testing** | unit tests (`*_test.go`), table‑driven tests, httptest for handlers, `go test -race`, benchmarks, pprof profiling |
+
+---
+
+## 9. TL;DR – Quick Reference
+```text
+Microservices      → split responsibilities, own data
+gRPC + Protobuf    → high‑performance RPC, strong schema
+Middleware         → logging, auth, rate‑limit, recovery
+Redis (cache‑aside)→ fast reads, TTL, invalidate on writes
+Docker (multi‑stage)→ tiny runtime image, reproducible builds
+Graceful shutdown  → server.Shutdown(ctx) + signal handling
+Testing            → unit + httptest, table‑driven, -race, benchmarks
+```
+Mastering this module equips you to design, build, and discuss **production‑grade Go backends** that interviewers expect you to know.

@@ -1,0 +1,28 @@
+---
+import rawThemeConfig from 'virtual:prosefly/lotus/config';
+
+interface Props {
+  class?: string;
+  fetchPriority?: 'high' | 'low' | 'auto';
+  markIdPrefix?: string;
+  textClass?: string;
+}
+
+const {
+  class: className,
+  textClass = 'truncate text-sm font-semibold sm:text-base',
+} = Astro.props;
+
+const themeConfig = rawThemeConfig as any;
+---
+
+<a
+  aria-label={themeConfig.name}
+  class:list={[
+    'lotus-focus-ring flex min-w-0 items-center text-(--lotus-text-strong) hover:opacity-90 transition-opacity',
+    className,
+  ]}
+  href="/"
+>
+  <span class={textClass}>{themeConfig.name}</span>
+</a>

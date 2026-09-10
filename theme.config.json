@@ -1,0 +1,104 @@
+{
+  "$schema": "https://prosefly.dev/schema/lotus.json",
+  "name": "Go for Beginners",
+  "description": "A structured 16-module course and documentation for Go (Golang).",
+  "docsBase": "/",
+  "appearance": {
+    "accent": "#4E44E6",
+    "gray": "slate",
+    "defaultMode": "dark",
+    "radius": "medium"
+  },
+  "credits": false,
+  "editLink": false,
+  "siteNav": [
+    {
+      "label": "Modules",
+      "href": "/modules/module-01/"
+    },
+    {
+      "label": "Official Go",
+      "href": "https://go.dev",
+      "external": true,
+      "trailingIcon": "lucide:arrow-up-right"
+    },
+    {
+      "label": "Go Packages",
+      "href": "https://pkg.go.dev",
+      "external": true,
+      "trailingIcon": "lucide:arrow-up-right"
+    }
+  ],
+  "socials": [
+    {
+      "label": "GitHub",
+      "href": "https://github.com/golang/go",
+      "external": true,
+      "icon": "github"
+    }
+  ],
+  "search": {
+    "provider": "local"
+  },
+  "docsNav": [
+    {
+      "label": "Course Modules",
+      "icon": "lucide:layers",
+      "items": [
+        "modules/module-01",
+        "modules/module-02",
+        "modules/module-03",
+        "modules/module-04",
+        "modules/module-05",
+        "modules/module-06",
+        "modules/module-07",
+        "modules/module-08",
+        "modules/module-09",
+        "modules/module-10",
+        "modules/module-11",
+        "modules/module-12",
+        "modules/module-13",
+        "modules/module-14",
+        "modules/module-15",
+        "modules/module-16"
+      ]
+    }
+  ],
+  "footer": {
+    "copyright": "© 2026 Go Lang for Beginners. All rights reserved.",
+    "sections": [
+      {
+        "title": "Modules",
+        "links": [
+          {
+            "label": "Module 1: Getting Started",
+            "href": "/modules/module-01/"
+          },
+          {
+            "label": "Module 2: Types & Variables",
+            "href": "/modules/module-02/"
+          },
+          {
+            "label": "Module 3: Flow Control",
+            "href": "/modules/module-03/"
+          }
+        ]
+      },
+      {
+        "title": "Resources",
+        "links": [
+          {
+            "label": "Go Official Site",
+            "href": "https://go.dev",
+            "external": true
+          },
+          {
+            "label": "Standard Library",
+            "href": "https://pkg.go.dev/std",
+            "external": true
+          }
+        ]
+      }
+    ]
+  }
+}
