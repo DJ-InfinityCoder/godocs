@@ -11,11 +11,13 @@
   },
   "credits": false,
   "editLink": false,
-  "siteNav": [
+  "head": [
     {
-      "label": "Modules",
-      "href": "/modules/module-01/"
-    },
+      "tag": "style",
+      "src": "./src/styles/custom.css"
+    }
+  ],
+  "siteNav": [
     {
       "label": "Official Go",
       "href": "https://go.dev",
@@ -66,39 +68,6 @@
   ],
   "footer": {
     "copyright": "© 2026 Go Lang for Beginners. All rights reserved.",
-    "sections": [
-      {
-        "title": "Modules",
-        "links": [
-          {
-            "label": "Module 1: Getting Started",
-            "href": "/modules/module-01/"
-          },
-          {
-            "label": "Module 2: Types & Variables",
-            "href": "/modules/module-02/"
-          },
-          {
-            "label": "Module 3: Flow Control",
-            "href": "/modules/module-03/"
-          }
-        ]
-      },
-      {
-        "title": "Resources",
-        "links": [
-          {
-            "label": "Go Official Site",
-            "href": "https://go.dev",
-            "external": true
-          },
-          {
-            "label": "Standard Library",
-            "href": "https://pkg.go.dev/std",
-            "external": true
-          }
-        ]
-      }
-    ]
+    "sections": []
   }
 }

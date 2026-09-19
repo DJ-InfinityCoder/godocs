@@ -1,0 +1,12 @@
+/* Remove the redundant documentation sections subnav bar */
+nav[aria-label="Documentation sections"] {
+  display: none !important;
+}
+
+/* Reset subnav height and chrome offset on desktop */
+@media (min-width: 1024px) {
+  :root {
+    --lotus-subnav-height: 0px !important;
+    --lotus-docs-chrome-height: var(--lotus-header-height) !important;
+  }
+}
